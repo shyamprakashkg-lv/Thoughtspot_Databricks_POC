@@ -1,0 +1,19 @@
+command:
+  - streamlit
+  - run
+  - app.py
+
+env:
+  - name: DATABRICKS_HOST
+    value: https://adb-3666479212731434.14.azuredatabricks.net
+  - name: DATABRICKS_TOKEN
+    valueFrom: secret
+  - name: JOB_ID
+    value: "319455235888743"
+
+resources:
+  - name: default
+    description: Default compute for BrickShift app
+    spark_version: 13.3.x-scala2.12
+    node_type_id: Standard_DS3_v2
+    num_workers: 0
