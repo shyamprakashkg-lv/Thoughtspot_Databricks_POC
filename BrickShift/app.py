@@ -416,8 +416,50 @@ def normalize_host_url(host):
         host = f"https://{host}"
     return host
 
+def execute_sql_statement(host, token, warehouse_id, sql_statement, timeout=30):
+    """Execute a SQL statement and return results"""
+    try:
+        url = f"{host}/api/2.0/sql/statements"
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+        payload = {
+            "warehouse_id": warehouse_id,
+            "statement": sql_statement,
+            "wait_timeout": f"{timeout}s"
+        }
+        
+        response = requests.post(url, headers=headers, json=payload, timeout=timeout+5)
+        
+        if not response.ok:
+            error_text = response.text
+            try:
+                error_json = response.json()
+                error_message = error_json.get('message', error_text)
+            except:
+                error_message = error_text
+            return False, f"API Error {response.status_code}: {error_message}", None
+        
+        result = response.json()
+        status = result.get("status", {}).get("state", "UNKNOWN")
+        
+        if status == "FAILED":
+            error_message = result.get("status", {}).get("error", {})
+            error_msg = error_message.get("message", "Unknown error")
+            return False, f"Query failed: {error_msg}", None
+        
+        if status != "SUCCEEDED":
+            return False, f"Query did not succeed: {status}", None
+        
+        return True, "Success", result
+            
+    except requests.Timeout:
+        return False, f"Request timed out after {timeout} seconds", None
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        return False, f"Exception: {str(e)}\n{error_details}", None
+    
 def get_table_data_simple(host, token, warehouse_id, table_name):
-    """Clean table data fetching"""
+    """Clean table data fetching - used for Discovery tabs"""
     try:
         url = f"{host}/api/2.0/sql/statements"
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
@@ -457,6 +499,219 @@ def get_table_data_simple(host, token, warehouse_id, table_name):
     except Exception as e:
         st.error(f"Exception: {str(e)}")
         return pd.DataFrame()
+
+def get_table_data_for_config(host, token, warehouse_id, table_name):
+    """Get table data for config manager - higher limit"""
+    try:
+        success, message, result = execute_sql_statement(
+            host, token, warehouse_id, 
+            f"SELECT * FROM {table_name} LIMIT 10000"
+        )
+        
+        if not success:
+            st.error(message)
+            return pd.DataFrame()
+        
+        manifest = result.get("manifest", {})
+        schema = manifest.get("schema", {})
+        columns = [col.get("name", f"col_{i}") for i, col in enumerate(schema.get("columns", []))]
+        
+        result_obj = result.get("result", {})
+        data_array = result_obj.get("data_array", [])
+        
+        if data_array and columns:
+            return pd.DataFrame(data_array, columns=columns)
+        elif data_array:
+            return pd.DataFrame(data_array)
+        else:
+            return pd.DataFrame()
+            
+    except Exception as e:
+        st.error(f"Exception: {str(e)}")
+        return pd.DataFrame()
+    
+def write_table_data_sql(host, token, warehouse_id, table_name, df):
+    """Write DataFrame back to Unity Catalog table using SQL API - Simplified approach"""
+    try:
+        if df.empty:
+            return False, "Cannot write empty DataFrame"
+        
+        st.info(f"Starting write operation for {len(df)} rows...")
+        
+        # Step 1: Create a backup by selecting into a temp location first (optional safety)
+        # Step 2: Truncate the table
+        truncate_sql = f"DELETE FROM {table_name}"  # Using DELETE instead of TRUNCATE
+        st.info(f"Deleting existing rows from {table_name}...")
+        
+        success, message, _ = execute_sql_statement(host, token, warehouse_id, truncate_sql, timeout=40)
+        
+        if not success:
+            return False, f"Failed to delete from table: {message}"
+        
+        st.success("Existing rows deleted successfully")
+        
+        # Step 3: Get the actual column types from the table
+        describe_sql = f"DESCRIBE TABLE {table_name}"
+        success, message, result = execute_sql_statement(host, token, warehouse_id, describe_sql, timeout=30)
+        
+        if not success:
+            return False, f"Failed to describe table: {message}"
+        
+        # Parse column types
+        schema_data = result.get("result", {}).get("data_array", [])
+        column_types = {}
+        for row in schema_data:
+            if len(row) >= 2:
+                column_types[row[0]] = row[1].upper()
+        
+        st.info(f"Table schema: {column_types}")
+        
+        # Step 4: Insert data row by row for better error handling
+        columns = df.columns.tolist()
+        total_rows = len(df)
+        successful_inserts = 0
+        
+        # Try batch insert first (faster)
+        batch_size = 100
+        for batch_start in range(0, total_rows, batch_size):
+            batch_end = min(batch_start + batch_size, total_rows)
+            batch_df = df.iloc[batch_start:batch_end]
+            
+            values_list = []
+            for idx, row in batch_df.iterrows():
+                row_values = []
+                for col_name in columns:
+                    val = row[col_name]
+                    col_type = column_types.get(col_name, "STRING")
+                    
+                    # Handle NULL values
+                    if pd.isna(val) or val is None or (isinstance(val, str) and val.strip() == ''):
+                        row_values.append("NULL")
+                        continue
+                    
+                    # Handle based on column type
+                    if "INT" in col_type or "LONG" in col_type or "BIGINT" in col_type:
+                        try:
+                            row_values.append(str(int(val)))
+                        except:
+                            row_values.append("NULL")
+                    elif "DOUBLE" in col_type or "FLOAT" in col_type or "DECIMAL" in col_type:
+                        try:
+                            row_values.append(str(float(val)))
+                        except:
+                            row_values.append("NULL")
+                    elif "BOOLEAN" in col_type or "BOOL" in col_type:
+                        if isinstance(val, bool):
+                            row_values.append("TRUE" if val else "FALSE")
+                        elif isinstance(val, str):
+                            row_values.append("TRUE" if val.lower() in ['true', '1', 'yes'] else "FALSE")
+                        else:
+                            row_values.append("FALSE")
+                    else:  # STRING, VARCHAR, etc.
+                        # Escape special characters
+                        str_val = str(val)
+                        # Replace backslash first, then single quotes
+                        str_val = str_val.replace("\\", "\\\\")
+                        str_val = str_val.replace("'", "''")
+                        # Also handle newlines and tabs
+                        str_val = str_val.replace("\n", "\\n")
+                        str_val = str_val.replace("\t", "\\t")
+                        row_values.append(f"'{str_val}'")
+                
+                values_list.append(f"({', '.join(row_values)})")
+            
+            # Build INSERT statement
+            insert_sql = f"""
+            INSERT INTO {table_name} 
+            ({', '.join(columns)}) 
+            VALUES {', '.join(values_list)}
+            """
+            
+            st.info(f"Inserting batch {batch_start//batch_size + 1} ({batch_end - batch_start} rows)...")
+            
+            success, message, _ = execute_sql_statement(host, token, warehouse_id, insert_sql, timeout=50)
+            
+            if not success:
+                st.error(f"Batch insert failed: {message}")
+                # Try individual inserts for this batch
+                st.warning("Trying individual row inserts for failed batch...")
+                
+                for idx, row in batch_df.iterrows():
+                    row_values = []
+                    for col_name in columns:
+                        val = row[col_name]
+                        col_type = column_types.get(col_name, "STRING")
+                        
+                        if pd.isna(val) or val is None or (isinstance(val, str) and val.strip() == ''):
+                            row_values.append("NULL")
+                            continue
+                        
+                        if "INT" in col_type or "LONG" in col_type or "BIGINT" in col_type:
+                            try:
+                                row_values.append(str(int(val)))
+                            except:
+                                row_values.append("NULL")
+                        elif "DOUBLE" in col_type or "FLOAT" in col_type or "DECIMAL" in col_type:
+                            try:
+                                row_values.append(str(float(val)))
+                            except:
+                                row_values.append("NULL")
+                        elif "BOOLEAN" in col_type or "BOOL" in col_type:
+                            if isinstance(val, bool):
+                                row_values.append("TRUE" if val else "FALSE")
+                            else:
+                                row_values.append("FALSE")
+                        else:
+                            str_val = str(val).replace("\\", "\\\\").replace("'", "''").replace("\n", "\\n").replace("\t", "\\t")
+                            row_values.append(f"'{str_val}'")
+                    
+                    single_insert_sql = f"""
+                    INSERT INTO {table_name} 
+                    ({', '.join(columns)}) 
+                    VALUES ({', '.join(row_values)})
+                    """
+                    
+                    success_single, message_single, _ = execute_sql_statement(host, token, warehouse_id, single_insert_sql, timeout=50)
+                    
+                    if success_single:
+                        successful_inserts += 1
+                    else:
+                        st.warning(f"Failed to insert row {idx}: {message_single}")
+            else:
+                successful_inserts += (batch_end - batch_start)
+                st.success(f"Batch {batch_start//batch_size + 1} inserted successfully")
+        
+        # Step 5: Verify the data
+        verify_sql = f"SELECT COUNT(*) as cnt FROM {table_name}"
+        success, message, result = execute_sql_statement(host, token, warehouse_id, verify_sql, timeout=30)
+        
+        if success:
+            verify_data = result.get("result", {}).get("data_array", [[0]])
+            actual_count = verify_data[0][0] if verify_data else 0
+            try:
+                actual_count = int(actual_count)
+            except (ValueError, TypeError):
+                actual_count = 0
+            
+            st.info(f"Verification: {actual_count} rows in table (expected {total_rows})")
+            
+            if actual_count == total_rows:
+                return True, f"Successfully updated {table_name} - All {actual_count} rows written and verified"
+            elif actual_count > 0:
+                return True, f"Partially updated {table_name} - {actual_count}/{total_rows} rows written"
+            else:
+                return False, f"No rows were written to {table_name}"
+        else:
+            if successful_inserts > 0:
+                return True, f"Successfully inserted {successful_inserts}/{total_rows} rows (verification skipped)"
+            else:
+                return False, "No rows were successfully inserted"
+        
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        st.error(f"Exception details: {error_details}")
+        return False, f"Error writing to table: {str(e)}"
 
 def trigger_job(host, token, job_id, params=None):
     url = f"{host}/api/2.1/jobs/run-now"
@@ -532,6 +787,9 @@ if 'ts_active_tab' not in st.session_state:
 if 'pbi_active_tab' not in st.session_state:
     st.session_state.pbi_active_tab = 'conversion'
 
+if 'tableau_active_tab' not in st.session_state:
+    st.session_state.tableau_active_tab = 'conversion'
+
 config = load_config()
 
 databricks_host = normalize_host_url(config.get("databricks_host", ""))
@@ -547,6 +805,9 @@ ts_data_output_volume = config.get("data_output_volume", "/Volumes/catalog/schem
 # Power BI Job IDs
 pbi_conversion_job_id = config.get("pbi_conversion_job_id", "")
 pbi_discovery_job_id = config.get("pbi_discovery_job_id", "")
+
+# NEW: Tableau Job IDs
+tableau_conversion_job_id = config.get("tableau_conversion_job_id", "")
 
 auto_refresh = config.get("auto_refresh", True)
 show_logs = config.get("show_logs", True)
@@ -567,26 +828,22 @@ with header_col1:
     """, unsafe_allow_html=True)
 
 with header_col2:
+    test_job_id = None
     if st.session_state.main_panel == 'thoughtspot':
         test_job_id = ts_visual_job_id if ts_visual_job_id else ts_data_job_id
-        if test_job_id:
-            if st.button("Test Connection", type="secondary", key="global_test_conn"):
-                with st.spinner("Testing..."):
-                    success, message = test_connection(databricks_host, databricks_token, test_job_id)
-                    if success:
-                        st.toast("Connection successful")
-                    else:
-                        st.toast("Connection failed")
     elif st.session_state.main_panel == 'powerbi':
         test_job_id = pbi_conversion_job_id if pbi_conversion_job_id else pbi_discovery_job_id
-        if test_job_id:
-            if st.button("Test Connection", type="secondary", key="global_test_conn"):
-                with st.spinner("Testing..."):
-                    success, message = test_connection(databricks_host, databricks_token, test_job_id)
-                    if success:
-                        st.toast("Connection successful")
-                    else:
-                        st.toast("Connection failed")
+    elif st.session_state.main_panel == 'tableau':
+        test_job_id = tableau_conversion_job_id
+
+    if test_job_id:
+        if st.button("Test Connection", type="secondary", key="global_test_conn"):
+            with st.spinner("Testing..."):
+                success, message = test_connection(databricks_host, databricks_token, test_job_id)
+                if success:
+                    st.toast("Connection successful")
+                else:
+                    st.toast("Connection failed")
 
 # Panel selection buttons with active state styling
 col1, col2, col3 = st.columns(3)
@@ -604,8 +861,11 @@ with col2:
         st.rerun()
 
 with col3:
-    if st.button("Tableau (Coming Soon)", key="select_tableau", type="secondary", use_container_width=True, disabled=True):
-        pass
+    # UPDATED: Enabled Tableau Button
+    tableau_button_type = "primary" if st.session_state.main_panel == 'tableau' else "secondary"
+    if st.button("Tableau", key="select_tableau", type=tableau_button_type, use_container_width=True):
+        st.session_state.main_panel = 'tableau'
+        st.rerun()
 
 st.markdown("---")
 
@@ -622,36 +882,40 @@ with st.sidebar:
         st.markdown("### ThoughtSpot Migration")
     elif st.session_state.main_panel == 'powerbi':
         st.markdown("### Power BI Migration")
-    else:
+    elif st.session_state.main_panel == 'tableau':
         st.markdown("### Tableau Migration")
     
     # Sub-navigation based on active panel
     if st.session_state.main_panel == 'thoughtspot':
         if st.button("Conversion", key="ts_tab_conversion", use_container_width=True):
             st.session_state.ts_active_tab = 'conversion'
-        
         if st.button("Config Manager", key="ts_tab_config", use_container_width=True):
             st.session_state.ts_active_tab = 'config'
-        
         if st.button("History", key="ts_tab_history", use_container_width=True):
             st.session_state.ts_active_tab = 'history'
-        
         if st.button("Discovery Details", key="ts_tab_discovery", use_container_width=True):
             st.session_state.ts_active_tab = 'discovery'
     
     elif st.session_state.main_panel == 'powerbi':
         if st.button("Conversion", key="pbi_tab_conversion", use_container_width=True):
             st.session_state.pbi_active_tab = 'conversion'
-        
         if st.button("Config Manager", key="pbi_tab_config", use_container_width=True):
             st.session_state.pbi_active_tab = 'config'
-        
         if st.button("History", key="pbi_tab_history", use_container_width=True):
             st.session_state.pbi_active_tab = 'history'
-        
         if st.button("Discovery Details", key="pbi_tab_discovery", use_container_width=True):
             st.session_state.pbi_active_tab = 'discovery'
 
+    # NEW: Tableau Sidebar Navigation
+    elif st.session_state.main_panel == 'tableau':
+        if st.button("Conversion", key="tableau_tab_conversion", use_container_width=True):
+            st.session_state.tableau_active_tab = 'conversion'
+        
+        if st.button("Config Manager", key="tableau_tab_config", use_container_width=True):
+            st.session_state.tableau_active_tab = 'config'
+        
+        if st.button("History", key="tableau_tab_history", use_container_width=True):
+            st.session_state.tableau_active_tab = 'history'
 # ============================================================================
 # THOUGHTSPOT MIGRATION PANEL
 # ============================================================================
@@ -699,27 +963,147 @@ if st.session_state.main_panel == 'thoughtspot':
             
             tab1, tab2, tab3 = st.tabs(["Chart Type Mappings", "Liveboard Migration Config", "TML DBX Metadata Mapping"])
             
+            # Chart Type Mappings
             with tab1:
                 st.markdown("### Chart Type Mappings")
-                df = get_table_data_simple(databricks_host, databricks_token, warehouse_id, "dbx_migration_poc.dbx_migration_ts.chart_type_mappings")
+                table_name = "dbx_migration_poc.dbx_migration_ts.chart_type_mappings"
+                
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.markdown("Edit the configuration below and click Save to update the table.")
+                with col2:
+                    if st.button("Refresh", key="refresh_chart_mappings"):
+                        st.rerun()
+                
+                df = get_table_data_for_config(databricks_host, databricks_token, warehouse_id, table_name)
+                
                 if not df.empty:
-                    st.dataframe(df, use_container_width=True, height=400)
+                    # Create editable dataframe
+                    edited_df = st.data_editor(
+                        df, 
+                        use_container_width=True, 
+                        height=400,
+                        num_rows="dynamic",
+                        key="chart_type_mappings_editor"
+                    )
+                    
+                    col1, col2, col3 = st.columns([1, 1, 1])
+                    with col2:
+                        if st.button("Save Changes", type="primary", key="save_chart_mappings", use_container_width=True):
+                            with st.spinner("Saving changes..."):
+                                success, message = write_table_data_sql(
+                                    databricks_host, 
+                                    databricks_token, 
+                                    warehouse_id, 
+                                    table_name, 
+                                    edited_df
+                                )
+                                
+                                if success:
+                                    st.success(message)
+                                    time.sleep(1)
+                                    st.rerun()
+                                else:
+                                    st.error(message)
                 else:
                     st.warning("No data to display")
-            
+                    
+            # Liveboard Migration Config
             with tab2:
                 st.markdown("### Liveboard Migration Config")
-                df = get_table_data_simple(databricks_host, databricks_token, warehouse_id, "dbx_migration_poc.dbx_migration_ts.liveboard_migration_config")
+                table_name = "dbx_migration_poc.dbx_migration_ts.liveboard_migration_config"
+                
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.markdown("Edit the configuration below and click Save to update the table.")
+                with col2:
+                    if st.button("Refresh", key="refresh_liveboard_config"):
+                        st.rerun()
+                
+                df = get_table_data_for_config(databricks_host, databricks_token, warehouse_id, table_name)
+                
                 if not df.empty:
-                    st.dataframe(df, use_container_width=True, height=400)
+                    # Show data info for debugging
+                    st.caption(f"Loaded {len(df)} rows with columns: {', '.join(df.columns.tolist())}")
+                    
+                    # Create editable dataframe
+                    edited_df = st.data_editor(
+                        df, 
+                        use_container_width=True, 
+                        height=400,
+                        num_rows="dynamic",
+                        key="liveboard_config_editor"
+                    )
+                    
+                    # Show edited data info
+                    st.caption(f"Edited data: {len(edited_df)} rows")
+                    
+                    col1, col2, col3 = st.columns([1, 1, 1])
+                    with col2:
+                        if st.button("Save Changes", type="primary", key="save_liveboard_config", use_container_width=True):
+                            # Add debug info
+                            st.info(f"Attempting to save {len(edited_df)} rows to {table_name}")
+                            st.info(f"DataFrame columns: {edited_df.columns.tolist()}")
+                            st.info(f"DataFrame dtypes: {edited_df.dtypes.to_dict()}")
+                            
+                            # Show first row as sample
+                            if len(edited_df) > 0:
+                                st.info(f"Sample row: {edited_df.iloc[0].to_dict()}")
+                            
+                            with st.spinner("Saving changes..."):
+                                success, message = write_table_data_sql(
+                                    databricks_host, 
+                                    databricks_token, 
+                                    warehouse_id, 
+                                    table_name, 
+                                    edited_df
+                                )
+                                
+                                if success:
+                                    st.success(message)
+                                    time.sleep(1)
+                                    st.rerun()
+                                else:
+                                    st.error(f"Failed: {message}")
+                                    # Add more detailed error info
+                                    st.error("Please check if the table structure matches the data structure")
                 else:
                     st.warning("No data to display")
             
+            # TML DBX Metadata Mapping
             with tab3:
                 st.markdown("### TML DBX Metadata Mapping")
-                df = get_table_data_simple(databricks_host, databricks_token, warehouse_id, "dbx_migration_poc.dbx_migration_ts.tml_dbx_metadata_mapping")
+                table_name = "dbx_migration_poc.dbx_migration_ts.tml_dbx_metadata_mapping"
+                
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.markdown("Edit the configuration below and click Save to update the table.")
+                with col2:
+                    if st.button("Refresh", key="refresh_tml_mapping"):
+                        st.rerun()
+                
+                df = get_table_data_for_config(databricks_host, databricks_token, warehouse_id, table_name)
+                
                 if not df.empty:
-                    st.dataframe(df, use_container_width=True, height=400)
+                    edited_df = st.data_editor(
+                        df, 
+                        use_container_width=True, 
+                        height=400,
+                        num_rows="dynamic",
+                        key="tml_mapping_editor"
+                    )
+                    
+                    col1, col2, col3 = st.columns([1, 1, 1])
+                    with col2:
+                        if st.button("Save Changes", type="primary", key="save_tml_mapping", use_container_width=True):
+                            with st.spinner("Saving changes to Unity Catalog..."):
+                                success, message = write_table_data_sql(databricks_host, databricks_token, warehouse_id, table_name, edited_df)
+                                if success:
+                                    st.success(message)
+                                    time.sleep(1)
+                                    st.rerun()
+                                else:
+                                    st.error(message)
                 else:
                     st.warning("No data to display")
     
@@ -793,11 +1177,6 @@ if st.session_state.main_panel == 'thoughtspot':
     if st.session_state.ts_active_tab == 'conversion':
         # Visual conversion handlers
         if ts_visual_job_id:
-            if 'test_visual_button' in locals() and test_visual_button:
-                with st.spinner("Testing connection..."):
-                    success, message = test_connection(databricks_host, databricks_token, ts_visual_job_id)
-                    st.markdown(f'<div class="message-box message-{"success" if success else "error"}">{message}</div>', unsafe_allow_html=True)
-
             if 'start_visual_button' in locals() and start_visual_button:
                 try:
                     with st.spinner("Initiating visual conversion..."):
@@ -886,11 +1265,6 @@ if st.session_state.main_panel == 'thoughtspot':
 
         # Data conversion handlers
         if ts_data_job_id:
-            if 'test_data_button' in locals() and test_data_button:
-                with st.spinner("Testing connection..."):
-                    success, message = test_connection(databricks_host, databricks_token, ts_data_job_id)
-                    st.markdown(f'<div class="message-box message-{"success" if success else "error"}">{message}</div>', unsafe_allow_html=True)
-
             if 'start_data_button' in locals() and start_data_button:
                 try:
                     with st.spinner("Initiating data conversion..."):
@@ -1029,53 +1403,51 @@ elif st.session_state.main_panel == 'powerbi':
         else:
             st.info(f"Using warehouse: {warehouse_id}")
             
-            tab1, tab2, tab3, tab4, tab5 = st.tabs([
-                "Chart Type Mappings", 
-                "Expression Transformations", 
-                "Scale Type Detection",
-                "Widget Size Config",
-                "DAX to SQL Mapping"
-            ])
+            config_tables = [
+                ("Chart Type Mappings", "dbx_migration_poc.dbx_migration_pbi.chart_type_mappings"),
+                ("Expression Transformations", "dbx_migration_poc.dbx_migration_pbi.expression_transformations"),
+                ("Scale Type Detection", "dbx_migration_poc.dbx_migration_pbi.scale_type_detection"),
+                ("Widget Size Config", "dbx_migration_poc.dbx_migration_pbi.widget_size_config"),
+                ("DAX to SQL Mapping", "dbx_migration_poc.dbx_migration_pbi.dax_to_sql_mapping")
+            ]
             
-            with tab1:
-                st.markdown("### Chart Type Mappings")
-                df = get_table_data_simple(databricks_host, databricks_token, warehouse_id, "dbx_migration_poc.dbx_migration_pbi.chart_type_mappings")
-                if not df.empty:
-                    st.dataframe(df, use_container_width=True, height=400)
-                else:
-                    st.warning("No data to display")
+            tabs = st.tabs([name for name, _ in config_tables])
             
-            with tab2:
-                st.markdown("### Expression Transformations")
-                df = get_table_data_simple(databricks_host, databricks_token, warehouse_id, "dbx_migration_poc.dbx_migration_pbi.expression_transformations")
-                if not df.empty:
-                    st.dataframe(df, use_container_width=True, height=400)
-                else:
-                    st.warning("No data to display")
-            
-            with tab3:
-                st.markdown("### Scale Type Detection")
-                df = get_table_data_simple(databricks_host, databricks_token, warehouse_id, "dbx_migration_poc.dbx_migration_pbi.scale_type_detection")
-                if not df.empty:
-                    st.dataframe(df, use_container_width=True, height=400)
-                else:
-                    st.warning("No data to display")
-            
-            with tab4:
-                st.markdown("### Widget Size Config")
-                df = get_table_data_simple(databricks_host, databricks_token, warehouse_id, "dbx_migration_poc.dbx_migration_pbi.widget_size_config")
-                if not df.empty:
-                    st.dataframe(df, use_container_width=True, height=400)
-                else:
-                    st.warning("No data to display")
-            
-            with tab5:
-                st.markdown("### DAX to SQL Mapping")
-                df = get_table_data_simple(databricks_host, databricks_token, warehouse_id, "dbx_migration_poc.dbx_migration_pbi.dax_to_sql_mapping")
-                if not df.empty:
-                    st.dataframe(df, use_container_width=True, height=400)
-                else:
-                    st.warning("No data to display")
+            for idx, (tab_name, table_name) in enumerate(config_tables):
+                with tabs[idx]:
+                    st.markdown(f"### {tab_name}")
+                    
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        st.markdown("Edit the configuration below and click Save to update the table.")
+                    with col2:
+                        if st.button("Refresh", key=f"refresh_pbi_{idx}"):
+                            st.rerun()
+                    
+                    df = get_table_data_for_config(databricks_host, databricks_token, warehouse_id, table_name)
+                    
+                    if not df.empty:
+                        edited_df = st.data_editor(
+                            df, 
+                            use_container_width=True, 
+                            height=400,
+                            num_rows="dynamic",
+                            key=f"pbi_config_editor_{idx}"
+                        )
+                        
+                        col1, col2, col3 = st.columns([1, 1, 1])
+                        with col2:
+                            if st.button("Save Changes", type="primary", key=f"save_pbi_config_{idx}", use_container_width=True):
+                                with st.spinner("Saving changes to Unity Catalog..."):
+                                    success, message = write_table_data_sql(databricks_host, databricks_token, warehouse_id, table_name, edited_df)
+                                    if success:
+                                        st.success(message)
+                                        time.sleep(1)
+                                        st.rerun()
+                                    else:
+                                        st.error(message)
+                    else:
+                        st.warning("No data to display")
     
     # HISTORY TAB
     elif st.session_state.pbi_active_tab == 'history':
@@ -1206,11 +1578,6 @@ elif st.session_state.main_panel == 'powerbi':
 
     # Process Power BI conversion job
     if st.session_state.pbi_active_tab == 'conversion' and pbi_conversion_job_id:
-        
-        if 'test_pbi_button' in locals() and test_pbi_button:
-            with st.spinner("Testing connection..."):
-                success, message = test_connection(databricks_host, databricks_token, pbi_conversion_job_id)
-                st.markdown(f'<div class="message-box message-{"success" if success else "error"}">{message}</div>', unsafe_allow_html=True)
 
         if 'start_pbi_conversion_button' in locals() and start_pbi_conversion_button:
             try:
@@ -1321,21 +1688,202 @@ elif st.session_state.main_panel == 'powerbi':
                 st.markdown(f'<div class="message-box message-error">Error: {str(e)}</div>', unsafe_allow_html=True)
 
 # ============================================================================
-# TABLEAU COMING SOON SCREEN
+# TABLEAU MIGRATION PANEL
 # ============================================================================
-else:
-    st.markdown("""
-    <div class="coming-soon-screen">
-        <div class="coming-soon-title">Tableau Migration</div>
-        <div class="coming-soon-text">
-            We're working hard to bring you Tableau workbook migration capabilities.<br><br>
-            <strong>Planned Features:</strong><br>
-            • Workbook conversion to Databricks AI/BI<br>
-            • Calculated field transformation<br>
-            • Data source migration<br>
-            • Dashboard layout preservation<br><br>
-            Stay tuned for updates!
-        </div>
-        <div class="coming-soon-badge">Coming Soon</div>
-    </div>
-    """, unsafe_allow_html=True)
+elif st.session_state.main_panel == 'tableau':
+    
+    # CONVERSION TAB
+    if st.session_state.tableau_active_tab == 'conversion':
+        st.markdown('<h1 style="color: white; text-align: center; margin: 0; padding: 0.5rem 0;">Tableau to Databricks</h1>', unsafe_allow_html=True)
+        st.markdown('<p style="color: rgba(255,255,255,0.9); text-align: center; margin: 0 0 1.5rem 0; font-size: 0.95rem;">Workbook Migration</p>', unsafe_allow_html=True)
+        
+        if not tableau_conversion_job_id:
+            st.warning("Tableau conversion job ID not configured in config.json")
+            st.info("Please add 'tableau_conversion_job_id' to your config.json file")
+        else:
+            col1, col2, col3 = st.columns([1, 1, 1])
+            with col2:
+                start_tableau_conversion_button = st.button("Start Conversion", type="primary", use_container_width=True, key="start_tableau_conversion")
+
+    # CONFIG MANAGER TAB
+    elif st.session_state.tableau_active_tab == 'config':
+        st.markdown('<h1 style="color: white;">Tableau Config Manager</h1>', unsafe_allow_html=True)
+        st.markdown('<p>View and manage configuration tables</p>', unsafe_allow_html=True)
+        
+        if not warehouse_id:
+            st.warning("Warehouse ID not configured in config.json")
+        else:
+            st.info(f"Using warehouse: {warehouse_id}")
+            
+            # NOTE: Assuming Table names here. Please ensure these exist in your Unity Catalog
+            config_tables = [
+                ("Chart Type Mappings", "dbx_migration_poc.dbx_migration_tableau.chart_type_mappings"),
+                ("Calculated Fields", "dbx_migration_poc.dbx_migration_tableau.calculated_field_transformations"),
+                ("Widget Size Config", "dbx_migration_poc.dbx_migration_tableau.widget_size_config"),
+                ("VizQL to SQL Mapping", "dbx_migration_poc.dbx_migration_tableau.vizql_to_sql_mapping")
+            ]
+            
+            tabs = st.tabs([name for name, _ in config_tables])
+            
+            for idx, (tab_name, table_name) in enumerate(config_tables):
+                with tabs[idx]:
+                    st.markdown(f"### {tab_name}")
+                    
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        st.markdown("Edit the configuration below and click Save to update the table.")
+                    with col2:
+                        if st.button("Refresh", key=f"refresh_tableau_{idx}"):
+                            st.rerun()
+                    
+                    df = get_table_data_for_config(databricks_host, databricks_token, warehouse_id, table_name)
+                    
+                    if not df.empty:
+                        edited_df = st.data_editor(
+                            df, 
+                            use_container_width=True, 
+                            height=400,
+                            num_rows="dynamic",
+                            key=f"tableau_config_editor_{idx}"
+                        )
+                        
+                        col1, col2, col3 = st.columns([1, 1, 1])
+                        with col2:
+                            if st.button("Save Changes", type="primary", key=f"save_tableau_config_{idx}", use_container_width=True):
+                                with st.spinner("Saving changes to Unity Catalog..."):
+                                    success, message = write_table_data_sql(databricks_host, databricks_token, warehouse_id, table_name, edited_df)
+                                    if success:
+                                        st.success(message)
+                                        time.sleep(1)
+                                        st.rerun()
+                                    else:
+                                        st.error(message)
+                    else:
+                        st.warning(f"No data found or table does not exist: {table_name}")
+    
+    # HISTORY TAB
+    elif st.session_state.tableau_active_tab == 'history':
+        st.markdown('<h1 style="color: white;">Tableau Conversion History</h1>', unsafe_allow_html=True)
+        st.markdown('<p>View past workbook conversions from this session</p>', unsafe_allow_html=True)
+        
+        tableau_history = [h for h in st.session_state.run_history if h.get('source') == 'tableau']
+        
+        if tableau_history:
+            st.markdown(f"### Total Runs: {len(tableau_history)}")
+            st.table(pd.DataFrame(tableau_history))
+        else:
+            st.info("No Tableau conversion history available in this session.")
+    
+    # Process Tableau conversion job
+    if st.session_state.tableau_active_tab == 'conversion' and tableau_conversion_job_id:
+
+        if 'start_tableau_conversion_button' in locals() and start_tableau_conversion_button:
+            try:
+                with st.spinner("Initiating Tableau conversion..."):
+                    run_id = trigger_job(databricks_host, databricks_token, tableau_conversion_job_id, None)
+                    st.session_state.tableau_conversion_run_id = run_id
+                    st.session_state.tableau_conversion_start_time = datetime.now()
+                    
+                    st.session_state.run_history.append({
+                        'source': 'tableau',
+                        'run_id': run_id,
+                        'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        'status': 'Started'
+                    })
+                    
+                    st.markdown(f'<div class="message-box message-success">Tableau conversion started successfully. Run ID: {run_id}</div>', unsafe_allow_html=True)
+                    time.sleep(1)
+                    st.rerun()
+            except Exception as e:
+                st.markdown(f'<div class="message-box message-error">Error starting conversion: {str(e)}</div>', unsafe_allow_html=True)
+
+        if st.session_state.get("tableau_conversion_run_id"):
+            try:
+                run_id = st.session_state.tableau_conversion_run_id
+                run_status = get_run_status(databricks_host, databricks_token, run_id)
+                state = run_status.get("state", {})
+                life_cycle_state = state.get("life_cycle_state", "UNKNOWN")
+                result_state = state.get("result_state", "")
+                tasks = run_status.get("tasks", [])
+            
+                st.markdown("---")
+                
+                tableau_tab_out1, tableau_tab_out2 = st.tabs(["Conversion Output", "Execution Details"])
+            
+                with tableau_tab_out1:
+                    if life_cycle_state == "TERMINATED":
+                        # Try to find the task that has notebook output with dashboard info
+                        dashboard_found = False
+                        
+                        for task in reversed(tasks):
+                            if task.get("run_id"):
+                                try:
+                                    task_output = get_run_output(databricks_host, databricks_token, task["run_id"])
+                                    notebook_output = task_output.get("notebook_output", {})
+                                    result_str = notebook_output.get("result")
+                                    
+                                    if result_str:
+                                        try:
+                                            result_data = json.loads(result_str)
+                                            # Check if this result has dashboard info
+                                            if "dashboard_id" in result_data or "dashboard_url" in result_data:
+                                                st.markdown('<div class="dashboard-card"><div class="dashboard-title">Conversion Complete</div>', unsafe_allow_html=True)
+                                                col1, col2, col3 = st.columns(3)
+                                                with col1:
+                                                    st.markdown(f'<div class="dashboard-item"><div class="dashboard-label">Dashboard ID</div><div class="dashboard-value">{result_data.get("dashboard_id", "N/A")}</div></div>', unsafe_allow_html=True)
+                                                with col2:
+                                                    st.markdown(f'<div class="dashboard-item"><div class="dashboard-label">Dashboard Name</div><div class="dashboard-value">{result_data.get("dashboard_name", "N/A")}</div></div>', unsafe_allow_html=True)
+                                                with col3:
+                                                    url = result_data.get("dashboard_url", "")
+                                                    link_html = f'<a href="{url}" target="_blank" class="dashboard-link">Open Dashboard</a>' if url else "Not Available"
+                                                    st.markdown(f'<div class="dashboard-item"><div class="dashboard-label">Link</div><div class="dashboard-value">{link_html}</div></div>', unsafe_allow_html=True)
+                                                st.markdown('</div>', unsafe_allow_html=True)
+                                                dashboard_found = True
+                                                break
+                                        except:
+                                            continue
+                                except:
+                                    continue
+                        
+                        if not dashboard_found:
+                            if result_state == "SUCCESS":
+                                st.markdown('<div class="message-box message-success">Conversion completed successfully.</div>', unsafe_allow_html=True)
+                            else:
+                                st.markdown('<div class="message-box message-info">No dashboard output information available</div>', unsafe_allow_html=True)
+                    else:
+                        st.markdown('<div class="message-box message-info">Conversion in progress...</div>', unsafe_allow_html=True)
+                        st.progress(0.5)
+            
+                with tableau_tab_out2:
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.markdown(f'<div class="metric-card"><div class="metric-label">Run ID</div><div class="metric-value">{run_id}</div></div>', unsafe_allow_html=True)
+                    with col2:
+                        status_display = result_state if result_state else life_cycle_state
+                        status_class = "status-success" if result_state == "SUCCESS" else "status-error" if result_state in ["FAILED", "TIMEDOUT"] else "status-running"
+                        st.markdown(f'<div class="metric-card"><div class="metric-label">Status</div><div class="metric-value {status_class}">{status_display}</div></div>', unsafe_allow_html=True)
+                    with col3:
+                        if st.session_state.get("tableau_conversion_start_time"):
+                            elapsed = (datetime.now() - st.session_state.tableau_conversion_start_time).seconds
+                            st.markdown(f'<div class="metric-card"><div class="metric-label">Elapsed Time</div><div class="metric-value">{elapsed}s</div></div>', unsafe_allow_html=True)
+                    with col4:
+                        url = run_status.get("run_page_url", "")
+                        if url:
+                            st.markdown(f'<div class="metric-card"><div class="metric-label">Details</div><div class="metric-value"><a href="{url}" target="_blank" style="color: #667eea;">View Logs</a></div></div>', unsafe_allow_html=True)
+                
+                    st.markdown("### Task Execution")
+                    for task in tasks:
+                        task_state = task.get("state", {})
+                        task_name = task.get("task_key", "Unknown")
+                        task_result = task_state.get("result_state", "")
+                        symbol = "[SUCCESS]" if task_result == "SUCCESS" else "[FAILED]" if task_result in ["FAILED", "TIMEDOUT"] else "[PENDING]"
+                        with st.expander(f"{symbol} {task_name}", expanded=False):
+                            st.write(f"**Status:** {task_result if task_result else task_state.get('life_cycle_state', 'UNKNOWN')}")
+                            if task.get("start_time") and task.get("end_time"):
+                                st.write(f"**Duration:** {(task['end_time'] - task['start_time']) / 1000:.2f}s")
+            
+                if auto_refresh and life_cycle_state in ["PENDING", "RUNNING"]:
+                    time.sleep(config.get("refresh_interval_seconds", 5))
+                    st.rerun()
+            except Exception as e:
+                st.markdown(f'<div class="message-box message-error">Error: {str(e)}</div>', unsafe_allow_html=True)

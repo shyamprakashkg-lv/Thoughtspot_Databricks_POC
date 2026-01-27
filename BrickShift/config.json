@@ -6,6 +6,7 @@
   "data_output_volume": "/Volumes/dbx_migration_poc/dbx_migration_ts/lv_dashfiles_ak/SqlOutputs/",
   "pbi_conversion_job_id": "187893630495435",
   "pbi_discovery_job_id": "1028536310801462",
+  "tableau_conversion_job_id":"672646956545660",
   "auto_refresh": true,
   "show_logs": true,
   "refresh_interval_seconds": 5
