@@ -394,6 +394,54 @@ st.markdown("""
         text-transform: uppercase;
         letter-spacing: 0.5px;
     }
+
+    /* ------------------------------------------------ */
+    /* FIXED: Genie Widget at Bottom of Sidebar */
+    /* ------------------------------------------------ */
+    .genie-widget-container {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        width: 21rem; /* Standard Streamlit sidebar width */
+        padding: 1rem; /* Matches Streamlit's default sidebar padding */
+        z-index: 99999; /* Force it to stay on top */
+        background-color: #0f172a; /* Match your sidebar background color */
+        border-top: 1px solid #334155; /* Optional: Separator line */
+        box-sizing: border-box; /* Ensures padding doesn't expand the width */
+    }
+
+    /* Force the Streamlit button container to fill the width */
+    .genie-widget-container .stButton {
+        width: 100% !important;
+        margin: 0 !important;
+    }
+
+    /* Style the actual button to match your other navigation buttons */
+    .genie-widget-container .stButton > button {
+        width: 100% !important;
+        height: auto;
+        padding: 0.5rem 1rem; /* Adjust vertical padding to match others */
+        font-weight: 600;
+        
+        /* Your Genie styling */
+        background: linear-gradient(to right, #1e293b, #0f172a);
+        border: 1px solid #60a5fa; 
+        color: #e2e8f0;
+        border-radius: 4px; /* Matches standard Streamlit button radius */
+        
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        transition: all 0.2s ease;
+    }
+
+    /* Hover effect */
+    .genie-widget-container .stButton > button:hover {
+        border-color: #93c5fd;
+        background: linear-gradient(to right, #334155, #1e293b);
+        transform: translateY(-1px);
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -415,6 +463,116 @@ def normalize_host_url(host):
     if not host.startswith(('http://', 'https://')):
         host = f"https://{host}"
     return host
+
+def query_genie_api(host, token, space_id, content, conversation_id=None):
+    """
+    Interacts with Databricks Genie Space API (Corrected Endpoints).
+    1. Starts conversation via 'start-conversation' endpoint.
+    2. Or sends message to existing conversation via 'messages' endpoint.
+    3. Polls for completion and extracts attachments (Text/SQL).
+    """
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
+    
+    try:
+        # ------------------------------------------------------------------
+        # SCENARIO 1: START A NEW CONVERSATION
+        # Endpoint: POST .../spaces/{space_id}/start-conversation
+        # ------------------------------------------------------------------
+        if not conversation_id:
+            start_url = f"{host}/api/2.0/genie/spaces/{space_id}/start-conversation"
+            payload = {"content": content}
+            
+            resp = requests.post(start_url, headers=headers, json=payload)
+            if not resp.ok:
+                return None, f"Failed to start conversation (Status {resp.status_code}): {resp.text}"
+            
+            data = resp.json()
+            conversation_id = data.get("conversation_id")
+            # The start response contains the first message object
+            message_obj = data.get("message", {})
+            message_id = message_obj.get("id") or message_obj.get("message_id")
+
+        # ------------------------------------------------------------------
+        # SCENARIO 2: CONTINUE EXISTING CONVERSATION
+        # Endpoint: POST .../spaces/{space_id}/conversations/{conv_id}/messages
+        # ------------------------------------------------------------------
+        else:
+            msg_url = f"{host}/api/2.0/genie/spaces/{space_id}/conversations/{conversation_id}/messages"
+            payload = {"content": content}
+            
+            resp = requests.post(msg_url, headers=headers, json=payload)
+            if not resp.ok:
+                 return conversation_id, f"Error sending message: {resp.text}"
+            
+            data = resp.json()
+            # The response is the message object directly
+            message_id = data.get("id") or data.get("message_id")
+
+        # ------------------------------------------------------------------
+        # STEP 3: POLL FOR COMPLETION
+        # Endpoint: GET .../spaces/{space_id}/conversations/{conv_id}/messages/{msg_id}
+        # ------------------------------------------------------------------
+        if not message_id:
+            return conversation_id, "Error: No message ID returned to track response."
+
+        max_retries = 30 # Wait up to 60 seconds
+        final_text = ""
+        
+        with st.spinner("Genie is thinking..."):
+            for _ in range(max_retries):
+                poll_url = f"{host}/api/2.0/genie/spaces/{space_id}/conversations/{conversation_id}/messages/{message_id}"
+                poll_resp = requests.get(poll_url, headers=headers)
+                
+                if poll_resp.ok:
+                    poll_data = poll_resp.json()
+                    status = poll_data.get("status", "COMPLETED")
+                    
+                    if status == "COMPLETED":
+                        final_text = _parse_genie_attachments(poll_data)
+                        break
+                    elif status in ["FAILED", "CANCELLED"]:
+                        final_text = f"Genie stopped with status: {status}"
+                        break
+                
+                time.sleep(2)
+        
+        if not final_text:
+            final_text = "No response content received (Timed out)."
+
+        return conversation_id, final_text
+
+    except Exception as e:
+        return conversation_id, f"API Exception: {str(e)}"
+
+def _parse_genie_attachments(data):
+    """Helper to extract AI answers from Genie attachments"""
+    text_accum = ""
+    attachments = data.get("attachments", [])
+    
+    if not attachments:
+        return "Command completed (No output details provided)."
+
+    for attachment in attachments:
+        # Check for Text attachment
+        if "text" in attachment:
+            text_content = attachment["text"].get("content", "")
+            if text_content:
+                text_accum += text_content + "\n\n"
+        
+        # Check for SQL Query attachment
+        if "query" in attachment:
+            query_sql = attachment["query"].get("query", "")
+            if query_sql:
+                text_accum += f"```sql\n{query_sql}\n```\n\n"
+                
+        # Handle generic/older schema if needed
+        if "content" in attachment and "text" not in attachment:
+             text_accum += str(attachment["content"]) + "\n"
+
+    return text_accum.strip()
 
 def execute_sql_statement(host, token, warehouse_id, sql_statement, timeout=30):
     """Execute a SQL statement and return results"""
@@ -773,7 +931,7 @@ def read_volume_file(host, token, file_path):
             return content, None
     except Exception as e:
         return None, f"Error reading file: {str(e)}"
-
+    
 # Initialize session state
 if 'run_history' not in st.session_state:
     st.session_state.run_history = []
@@ -796,6 +954,7 @@ databricks_host = normalize_host_url(config.get("databricks_host", ""))
 #databricks_token = config.get("databricks_token", "")
 databricks_token = os.getenv("DATABRICKS_TOKEN")
 warehouse_id = config.get("warehouse_id", "")
+genie_space_id = config.get("genie_space_id", "")
 
 # ThoughtSpot Job IDs
 ts_visual_job_id = config.get("visual_job_id", "")
@@ -869,7 +1028,9 @@ with col3:
 
 st.markdown("---")
 
-# Sidebar - Sub Navigation
+# ============================================================================
+# SIDEBAR NAVIGATION
+# ============================================================================
 with st.sidebar:
     st.markdown("""
     <div style="text-align: center; padding: 1rem 0 1.5rem 0; border-bottom: 1px solid #334155; margin-bottom: 1.5rem;">
@@ -877,16 +1038,11 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
     
-    # Show current section header
+    # ---------------------------------------
+    # Regular Navigation Buttons
+    # ---------------------------------------
     if st.session_state.main_panel == 'thoughtspot':
         st.markdown("### ThoughtSpot Migration")
-    elif st.session_state.main_panel == 'powerbi':
-        st.markdown("### Power BI Migration")
-    elif st.session_state.main_panel == 'tableau':
-        st.markdown("### Tableau Migration")
-    
-    # Sub-navigation based on active panel
-    if st.session_state.main_panel == 'thoughtspot':
         if st.button("Conversion", key="ts_tab_conversion", use_container_width=True):
             st.session_state.ts_active_tab = 'conversion'
         if st.button("Config Manager", key="ts_tab_config", use_container_width=True):
@@ -897,6 +1053,7 @@ with st.sidebar:
             st.session_state.ts_active_tab = 'discovery'
     
     elif st.session_state.main_panel == 'powerbi':
+        st.markdown("### Power BI Migration")
         if st.button("Conversion", key="pbi_tab_conversion", use_container_width=True):
             st.session_state.pbi_active_tab = 'conversion'
         if st.button("Config Manager", key="pbi_tab_config", use_container_width=True):
@@ -906,16 +1063,89 @@ with st.sidebar:
         if st.button("Discovery Details", key="pbi_tab_discovery", use_container_width=True):
             st.session_state.pbi_active_tab = 'discovery'
 
-    # NEW: Tableau Sidebar Navigation
     elif st.session_state.main_panel == 'tableau':
+        st.markdown("### Tableau Migration")
         if st.button("Conversion", key="tableau_tab_conversion", use_container_width=True):
             st.session_state.tableau_active_tab = 'conversion'
-        
         if st.button("Config Manager", key="tableau_tab_config", use_container_width=True):
             st.session_state.tableau_active_tab = 'config'
-        
         if st.button("History", key="tableau_tab_history", use_container_width=True):
             st.session_state.tableau_active_tab = 'history'
+
+    # ---------------------------------------
+    # GENIE CHAT LOGIC
+    # ---------------------------------------
+    
+    # Initialize Chat State
+    if "genie_messages" not in st.session_state:
+        st.session_state.genie_messages = [{"role": "assistant", "content": "Hello! I am connected to your Databricks Dataset Space. Ask me anything about your data."}]
+    if "genie_conversation_id" not in st.session_state:
+        st.session_state.genie_conversation_id = None
+
+    # The Modal Dialog Function
+    @st.dialog("🧞 Genie Assistant", width="large")
+    def open_genie_chat():
+        # Header (Only Caption, New Chat button removed)
+        st.caption("Powered by Databricks Genie Space")
+
+        # Display Chat History
+        for message in st.session_state.genie_messages:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+
+        # Chat Input
+        if prompt := st.chat_input("Ask a question about your data..."):
+            # 1. Append User Message
+            st.session_state.genie_messages.append({"role": "user", "content": prompt})
+            with st.chat_message("user"):
+                st.markdown(prompt)
+
+            # 2. Generate Response
+            if not genie_space_id:
+                error_msg = "⚠️ Error: 'genie_space_id' is missing in config.json."
+                st.session_state.genie_messages.append({"role": "assistant", "content": error_msg})
+                with st.chat_message("assistant"):
+                    st.error(error_msg)
+            else:
+                # Call Backend API
+                conv_id, response_text = query_genie_api(
+                    databricks_host, 
+                    databricks_token, 
+                    genie_space_id, 
+                    prompt, 
+                    st.session_state.genie_conversation_id
+                )
+                
+                # Update ID for context
+                if conv_id:
+                    st.session_state.genie_conversation_id = conv_id
+                
+                # Append Assistant Message
+                st.session_state.genie_messages.append({"role": "assistant", "content": response_text})
+                with st.chat_message("assistant"):
+                    st.markdown(response_text)
+            
+            # NOTE: st.rerun() removed to prevent dialog closing
+
+    # ---------------------------------------
+    # SIDEBAR FOOTER (Floating Button)
+    # ---------------------------------------
+    
+    # 1. Add a spacer to ensure the normal menu items don't get hidden behind the fixed footer
+    #    when you scroll down.
+    st.markdown("<div style='height: 80px;'></div>", unsafe_allow_html=True)
+    
+    # 2. The Fixed Footer Container
+    st.markdown('<div class="genie-widget-container">', unsafe_allow_html=True)
+    
+    # 3. The Button
+    #    Note: We use use_container_width=True, but the CSS 'width: 100%' 
+    #    is the real enforcer here for the fixed element.
+    if st.button("🧞 Ask Genie", key="genie_trigger_btn", type="secondary", use_container_width=True):
+        open_genie_chat()
+        
+    st.markdown('</div>', unsafe_allow_html=True)
+
 # ============================================================================
 # THOUGHTSPOT MIGRATION PANEL
 # ============================================================================
@@ -939,7 +1169,7 @@ if st.session_state.main_panel == 'thoughtspot':
                 with col2:
                     start_data_button = st.button("Start Data Conversion", type="primary", use_container_width=True, key="start_ts_data_conv")
                 
-       
+        
         # VISUAL CONVERSION TAB
         with conversion_tab2:
             st.markdown('<p style="margin: 1rem 0;">Convert ThoughtSpot dashboards to Databricks AI/BI</p>', unsafe_allow_html=True)
@@ -1201,31 +1431,55 @@ if st.session_state.main_panel == 'thoughtspot':
                     
                         visual_tab_out1, visual_tab_out2 = st.tabs(["Dashboard Output", "Execution Details"])
                     
+                        # -----------------------------------------------------------
+                        # UPDATED LOGIC HERE: Improved Task Output Discovery
+                        # -----------------------------------------------------------
                         with visual_tab_out1:
                             if life_cycle_state == "TERMINATED":
-                                task = tasks[-1] if tasks else None
-                                if task and task.get("run_id"):
-                                    try:
-                                        task_output = get_run_output(databricks_host, databricks_token, task["run_id"])
-                                        if task_output.get("notebook_output", {}).get("result"):
-                                            result_data = json.loads(task_output["notebook_output"]["result"])
-                                            st.markdown('<div class="dashboard-card"><div class="dashboard-title">Conversion Complete</div>', unsafe_allow_html=True)
-                                            col1, col2, col3 = st.columns(3)
-                                            with col1:
-                                                st.markdown(f'<div class="dashboard-item"><div class="dashboard-label">Dashboard ID</div><div class="dashboard-value">{result_data.get("dashboard_id", "N/A")}</div></div>', unsafe_allow_html=True)
-                                            with col2:
-                                                st.markdown(f'<div class="dashboard-item"><div class="dashboard-label">Dashboard Name</div><div class="dashboard-value">{result_data.get("dashboard_name", "N/A")}</div></div>', unsafe_allow_html=True)
-                                            with col3:
-                                                url = result_data.get("dashboard_url", "")
-                                                link_html = f'<a href="{url}" target="_blank" class="dashboard-link">Open Dashboard</a>' if url else "Not Available"
-                                                st.markdown(f'<div class="dashboard-item"><div class="dashboard-label">Link</div><div class="dashboard-value">{link_html}</div></div>', unsafe_allow_html=True)
-                                            st.markdown('</div>', unsafe_allow_html=True)
-                                        else:
-                                            st.markdown('<div class="message-box message-info">No dashboard information available</div>', unsafe_allow_html=True)
-                                    except:
-                                        st.markdown('<div class="message-box message-info">Dashboard information not available</div>', unsafe_allow_html=True)
-                                else:
-                                    st.markdown('<div class="message-box message-info">Dashboard information not available</div>', unsafe_allow_html=True)
+                                dashboard_found = False
+                                
+                                # Iterate through ALL tasks (reversed to find latest) to find dashboard output
+                                for task in reversed(tasks):
+                                    if task.get("run_id"):
+                                        try:
+                                            task_output = get_run_output(databricks_host, databricks_token, task["run_id"])
+                                            
+                                            # Check if notebook output exists
+                                            notebook_output = task_output.get("notebook_output", {})
+                                            result_str = notebook_output.get("result")
+                                            
+                                            if result_str:
+                                                try:
+                                                    result_data = json.loads(result_str)
+                                                    
+                                                    # Validate if this is the correct JSON payload containing dashboard info
+                                                    if "dashboard_id" in result_data or "dashboard_url" in result_data:
+                                                        st.markdown('<div class="dashboard-card"><div class="dashboard-title">Conversion Complete</div>', unsafe_allow_html=True)
+                                                        col1, col2, col3 = st.columns(3)
+                                                        with col1:
+                                                            st.markdown(f'<div class="dashboard-item"><div class="dashboard-label">Dashboard ID</div><div class="dashboard-value">{result_data.get("dashboard_id", "N/A")}</div></div>', unsafe_allow_html=True)
+                                                        with col2:
+                                                            st.markdown(f'<div class="dashboard-item"><div class="dashboard-label">Dashboard Name</div><div class="dashboard-value">{result_data.get("dashboard_name", "N/A")}</div></div>', unsafe_allow_html=True)
+                                                        with col3:
+                                                            url = result_data.get("dashboard_url", "")
+                                                            link_html = f'<a href="{url}" target="_blank" class="dashboard-link">Open Dashboard</a>' if url else "Not Available"
+                                                            st.markdown(f'<div class="dashboard-item"><div class="dashboard-label">Link</div><div class="dashboard-value">{link_html}</div></div>', unsafe_allow_html=True)
+                                                        st.markdown('</div>', unsafe_allow_html=True)
+                                                        
+                                                        dashboard_found = True
+                                                        break # Stop searching once found
+                                                except json.JSONDecodeError:
+                                                    continue
+                                        except Exception as e:
+                                            continue
+                                
+                                # If loop finishes without finding dashboard info
+                                if not dashboard_found:
+                                    if result_state == "SUCCESS":
+                                        st.markdown('<div class="message-box message-info">Job succeeded, but no dashboard output details found in logs.</div>', unsafe_allow_html=True)
+                                    else:
+                                        st.markdown('<div class="message-box message-info">Dashboard information not available (Job Failed or Cancelled)</div>', unsafe_allow_html=True)
+                                
                             else:
                                 st.markdown('<div class="message-box message-info">Conversion in progress...</div>', unsafe_allow_html=True)
                     
