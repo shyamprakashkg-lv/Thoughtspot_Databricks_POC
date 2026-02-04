@@ -442,6 +442,39 @@ st.markdown("""
         background: linear-gradient(to right, #334155, #1e293b);
         transform: translateY(-1px);
     }
+    
+    /* ------------------------------------------------ */
+    /* NEW: External Icon for Genie Button              */
+    /* ------------------------------------------------ */
+    
+    /* 1. Target the button inside the genie widget container */
+    .genie-widget-container .stButton > button {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 12px !important; /* Increased gap for better spacing */
+    }
+
+    /* 2. Inject the icon using a pseudo-element */
+    .genie-widget-container .stButton > button::before {
+        content: "";
+        display: inline-block;
+        width: 1.2rem;
+        height: 1.2rem;
+        
+        /* FORCE WHITE COLOR explicitly instead of currentColor */
+        background-color: #f8fafc !important; 
+        
+        /* WEB & STANDARD MASKS */
+        -webkit-mask: url('https://cdn.jsdelivr.net/npm/heroicons@2.0.18/24/outline/sparkles.svg') no-repeat center;
+        mask: url('https://cdn.jsdelivr.net/npm/heroicons@2.0.18/24/outline/sparkles.svg') no-repeat center;
+        
+        -webkit-mask-size: contain;
+        mask-size: contain;
+        
+        /* Ensure it renders on top */
+        z-index: 1;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -931,7 +964,7 @@ def read_volume_file(host, token, file_path):
             return content, None
     except Exception as e:
         return None, f"Error reading file: {str(e)}"
-    
+
 # Initialize session state
 if 'run_history' not in st.session_state:
     st.session_state.run_history = []
@@ -961,12 +994,18 @@ ts_visual_job_id = config.get("visual_job_id", "")
 ts_data_job_id = config.get("data_job_id", "")
 ts_data_output_volume = config.get("data_output_volume", "/Volumes/catalog/schema/volume_name/output/")
 
-# Power BI Job IDs
+# Power BI Job IDs (UPDATED)
+# Fallback to general conversion ID if specific visual ID not present
 pbi_conversion_job_id = config.get("pbi_conversion_job_id", "")
+pbi_visual_job_id = config.get("pbi_visual_job_id", pbi_conversion_job_id)
+pbi_data_job_id = config.get("pbi_data_job_id", "")
 pbi_discovery_job_id = config.get("pbi_discovery_job_id", "")
 
-# NEW: Tableau Job IDs
+# Tableau Job IDs (UPDATED)
+# Fallback to general conversion ID if specific visual ID not present
 tableau_conversion_job_id = config.get("tableau_conversion_job_id", "")
+tableau_visual_job_id = config.get("tableau_visual_job_id", tableau_conversion_job_id)
+tableau_data_job_id = config.get("tableau_data_job_id", "")
 
 auto_refresh = config.get("auto_refresh", True)
 show_logs = config.get("show_logs", True)
@@ -991,9 +1030,9 @@ with header_col2:
     if st.session_state.main_panel == 'thoughtspot':
         test_job_id = ts_visual_job_id if ts_visual_job_id else ts_data_job_id
     elif st.session_state.main_panel == 'powerbi':
-        test_job_id = pbi_conversion_job_id if pbi_conversion_job_id else pbi_discovery_job_id
+        test_job_id = pbi_visual_job_id if pbi_visual_job_id else (pbi_data_job_id if pbi_data_job_id else pbi_discovery_job_id)
     elif st.session_state.main_panel == 'tableau':
-        test_job_id = tableau_conversion_job_id
+        test_job_id = tableau_visual_job_id if tableau_visual_job_id else tableau_data_job_id
 
     if test_job_id:
         if st.button("Test Connection", type="secondary", key="global_test_conn"):
@@ -1083,7 +1122,7 @@ with st.sidebar:
         st.session_state.genie_conversation_id = None
 
     # The Modal Dialog Function
-    @st.dialog("🧞 Genie Assistant", width="large")
+    @st.dialog("✨ Genie Assistant", width="large")
     def open_genie_chat():
         # Header (Only Caption, New Chat button removed)
         st.caption("Powered by Databricks Genie Space")
@@ -1141,7 +1180,7 @@ with st.sidebar:
     # 3. The Button
     #    Note: We use use_container_width=True, but the CSS 'width: 100%' 
     #    is the real enforcer here for the fixed element.
-    if st.button("🧞 Ask Genie", key="genie_trigger_btn", type="secondary", use_container_width=True):
+    if st.button("✨Ask Genie", key="genie_trigger_btn", type="secondary", use_container_width=True):
         open_genie_chat()
         
     st.markdown('</div>', unsafe_allow_html=True)
@@ -1589,10 +1628,15 @@ if st.session_state.main_panel == 'thoughtspot':
                                         except Exception as e:
                                             st.error(f"Error parsing job output: {str(e)}")
                                 
-                                elif result_state in ["FAILED", "TIMEDOUT"]:
-                                    st.markdown(f'<div class="message-box message-error">Data conversion failed with status: {result_state}</div>', unsafe_allow_html=True)
+                                # EXPLICIT FAILURE HANDLING
+                                elif result_state in ["FAILED", "TIMEDOUT", "CANCELED"]:
+                                    st.markdown(f'<div class="message-box message-error">Data conversion failed. Status: {result_state}</div>', unsafe_allow_html=True)
+                                    if state.get("state_message"):
+                                        st.error(f"Error Details: {state.get('state_message')}")
+                                else:
+                                    st.markdown(f'<div class="message-box message-error">Job ended with unexpected status: {result_state}</div>', unsafe_allow_html=True)
                             else:
-                                st.markdown('<div class="message-box message-info">Data conversion in progress...</div>', unsafe_allow_html=True)
+                                st.markdown(f'<div class="message-box message-info">Data conversion in progress... (State: {life_cycle_state})</div>', unsafe_allow_html=True)
                                 st.progress(0.5)
                     
                         with data_tab_out2:
@@ -1639,13 +1683,30 @@ elif st.session_state.main_panel == 'powerbi':
         st.markdown('<h1 style="color: white; text-align: center; margin: 0; padding: 0.5rem 0;">Power BI to Databricks</h1>', unsafe_allow_html=True)
         st.markdown('<p style="color: rgba(255,255,255,0.9); text-align: center; margin: 0 0 1.5rem 0; font-size: 0.95rem;">Dashboard Migration</p>', unsafe_allow_html=True)
         
-        if not pbi_conversion_job_id:
-            st.warning("Power BI conversion job ID not configured in config.json")
-            st.info("Please add 'pbi_conversion_job_id' to your config.json file")
-        else:
-            col1, col2, col3 = st.columns([1, 1, 1])
-            with col2:
-                start_pbi_conversion_button = st.button("Start Conversion", type="primary", use_container_width=True, key="start_pbi_conversion")
+        # New Tab structure for PBI
+        pbi_conv_tab1, pbi_conv_tab2 = st.tabs(["Data Conversion", "Visual Conversion"])
+
+        # PBI DATA CONVERSION
+        with pbi_conv_tab1:
+            st.markdown('<p style="margin: 1rem 0;">Convert Power BI Data Models (DAX/M) to Databricks SQL</p>', unsafe_allow_html=True)
+            
+            if not pbi_data_job_id:
+                st.warning("Power BI Data conversion job ID not configured (pbi_data_job_id)")
+            else:
+                col1, col2, col3 = st.columns([1, 1, 1])
+                with col2:
+                    start_pbi_data_button = st.button("Start Data Conversion", type="primary", use_container_width=True, key="start_pbi_data_conv")
+
+        # PBI VISUAL CONVERSION
+        with pbi_conv_tab2:
+            st.markdown('<p style="margin: 1rem 0;">Convert Power BI Reports to Databricks AI/BI</p>', unsafe_allow_html=True)
+            
+            if not pbi_visual_job_id:
+                st.warning("Power BI Visual conversion job ID not configured (pbi_visual_job_id)")
+            else:
+                col1, col2, col3 = st.columns([1, 1, 1])
+                with col2:
+                    start_pbi_visual_button = st.button("Start Visual Conversion", type="primary", use_container_width=True, key="start_pbi_visual_conv")
 
     # CONFIG MANAGER TAB
     elif st.session_state.pbi_active_tab == 'config':
@@ -1662,7 +1723,7 @@ elif st.session_state.main_panel == 'powerbi':
                 ("Expression Transformations", "dbx_migration_poc.dbx_migration_pbi.expression_transformations"),
                 ("Scale Type Detection", "dbx_migration_poc.dbx_migration_pbi.scale_type_detection"),
                 ("Widget Size Config", "dbx_migration_poc.dbx_migration_pbi.widget_size_config"),
-                ("DAX to SQL Mapping", "dbx_migration_poc.dbx_migration_pbi.dax_to_sql_mapping")
+                ("DAX to SQL Mapping", "dbx_migration_poc.dbx_migration_pbi.dax_to_sql_mapping_v3")
             ]
             
             tabs = st.tabs([name for name, _ in config_tables])
@@ -1830,116 +1891,223 @@ elif st.session_state.main_panel == 'powerbi':
             except Exception as e:
                 st.markdown(f'<div class="message-box message-error">Error: {str(e)}</div>', unsafe_allow_html=True)
 
-    # Process Power BI conversion job
-    if st.session_state.pbi_active_tab == 'conversion' and pbi_conversion_job_id:
+    # Process Power BI Conversion Jobs (Data & Visual)
+    if st.session_state.pbi_active_tab == 'conversion':
+        
+        # --- PBI VISUAL JOB HANDLER ---
+        if pbi_visual_job_id:
+            if 'start_pbi_visual_button' in locals() and start_pbi_visual_button:
+                try:
+                    with st.spinner("Initiating Power BI Visual conversion..."):
+                        run_id = trigger_job(databricks_host, databricks_token, pbi_visual_job_id, None)
+                        st.session_state.pbi_visual_run_id = run_id
+                        st.session_state.pbi_visual_start_time = datetime.now()
+                        st.session_state.run_history.append({
+                            'source': 'powerbi', 'run_id': run_id, 'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'status': 'Started (Visual)'
+                        })
+                        st.markdown(f'<div class="message-box message-success">PBI Visual conversion started. Run ID: {run_id}</div>', unsafe_allow_html=True)
+                        time.sleep(1)
+                        st.rerun()
+                except Exception as e:
+                    st.markdown(f'<div class="message-box message-error">Error starting visual conversion: {str(e)}</div>', unsafe_allow_html=True)
 
-        if 'start_pbi_conversion_button' in locals() and start_pbi_conversion_button:
-            try:
-                with st.spinner("Initiating Power BI conversion..."):
-                    run_id = trigger_job(databricks_host, databricks_token, pbi_conversion_job_id, None)
-                    st.session_state.pbi_conversion_run_id = run_id
-                    st.session_state.pbi_conversion_start_time = datetime.now()
-                    
-                    st.session_state.run_history.append({
-                        'source': 'powerbi',
-                        'run_id': run_id,
-                        'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        'status': 'Started'
-                    })
-                    
-                    st.markdown(f'<div class="message-box message-success">Power BI conversion started successfully. Run ID: {run_id}</div>', unsafe_allow_html=True)
-                    time.sleep(1)
-                    st.rerun()
-            except Exception as e:
-                st.markdown(f'<div class="message-box message-error">Error starting conversion: {str(e)}</div>', unsafe_allow_html=True)
-
-        if st.session_state.get("pbi_conversion_run_id"):
-            try:
-                run_id = st.session_state.pbi_conversion_run_id
-                run_status = get_run_status(databricks_host, databricks_token, run_id)
-                state = run_status.get("state", {})
-                life_cycle_state = state.get("life_cycle_state", "UNKNOWN")
-                result_state = state.get("result_state", "")
-                tasks = run_status.get("tasks", [])
-            
-                st.markdown("---")
-                
-                pbi_tab_out1, pbi_tab_out2 = st.tabs(["Conversion Output", "Execution Details"])
-            
-                with pbi_tab_out1:
-                    if life_cycle_state == "TERMINATED":
-                        # Try to find the task that has notebook output with dashboard info
-                        dashboard_found = False
+            if st.session_state.get("pbi_visual_run_id"):
+                with pbi_conv_tab2:
+                    try:
+                        run_id = st.session_state.pbi_visual_run_id
+                        run_status = get_run_status(databricks_host, databricks_token, run_id)
+                        state = run_status.get("state", {})
+                        life_cycle_state = state.get("life_cycle_state", "UNKNOWN")
+                        result_state = state.get("result_state", "")
+                        tasks = run_status.get("tasks", [])
                         
-                        for task in reversed(tasks):
-                            if task.get("run_id"):
-                                try:
-                                    task_output = get_run_output(databricks_host, databricks_token, task["run_id"])
-                                    notebook_output = task_output.get("notebook_output", {})
-                                    result_str = notebook_output.get("result")
-                                    
-                                    if result_str:
+                        st.markdown("---")
+                        pv_out1, pv_out2 = st.tabs(["Dashboard Output", "Execution Details"])
+                        
+                        with pv_out1:
+                            if life_cycle_state == "TERMINATED":
+                                dashboard_found = False
+                                for task in reversed(tasks):
+                                    if task.get("run_id"):
                                         try:
-                                            result_data = json.loads(result_str)
-                                            # Check if this result has dashboard info
-                                            if "dashboard_id" in result_data or "dashboard_url" in result_data:
-                                                st.markdown('<div class="dashboard-card"><div class="dashboard-title">Conversion Complete</div>', unsafe_allow_html=True)
-                                                col1, col2, col3 = st.columns(3)
-                                                with col1:
-                                                    st.markdown(f'<div class="dashboard-item"><div class="dashboard-label">Dashboard ID</div><div class="dashboard-value">{result_data.get("dashboard_id", "N/A")}</div></div>', unsafe_allow_html=True)
-                                                with col2:
-                                                    st.markdown(f'<div class="dashboard-item"><div class="dashboard-label">Dashboard Name</div><div class="dashboard-value">{result_data.get("dashboard_name", "N/A")}</div></div>', unsafe_allow_html=True)
-                                                with col3:
-                                                    url = result_data.get("dashboard_url", "")
-                                                    link_html = f'<a href="{url}" target="_blank" class="dashboard-link">Open Dashboard</a>' if url else "Not Available"
-                                                    st.markdown(f'<div class="dashboard-item"><div class="dashboard-label">Link</div><div class="dashboard-value">{link_html}</div></div>', unsafe_allow_html=True)
-                                                st.markdown('</div>', unsafe_allow_html=True)
-                                                dashboard_found = True
-                                                break
-                                        except:
-                                            continue
-                                except:
-                                    continue
+                                            task_output = get_run_output(databricks_host, databricks_token, task["run_id"])
+                                            notebook_output = task_output.get("notebook_output", {})
+                                            result_str = notebook_output.get("result")
+                                            if result_str:
+                                                result_data = json.loads(result_str)
+                                                if "dashboard_id" in result_data or "dashboard_url" in result_data:
+                                                    st.markdown('<div class="dashboard-card"><div class="dashboard-title">Conversion Complete</div>', unsafe_allow_html=True)
+                                                    c1, c2, c3 = st.columns(3)
+                                                    with c1: st.markdown(f'<div class="dashboard-item"><div class="dashboard-label">ID</div><div class="dashboard-value">{result_data.get("dashboard_id", "N/A")}</div></div>', unsafe_allow_html=True)
+                                                    with c2: st.markdown(f'<div class="dashboard-item"><div class="dashboard-label">Name</div><div class="dashboard-value">{result_data.get("dashboard_name", "N/A")}</div></div>', unsafe_allow_html=True)
+                                                    with c3:
+                                                        url = result_data.get("dashboard_url", "")
+                                                        link = f'<a href="{url}" target="_blank" class="dashboard-link">Open</a>' if url else "N/A"
+                                                        st.markdown(f'<div class="dashboard-item"><div class="dashboard-label">Link</div><div class="dashboard-value">{link}</div></div>', unsafe_allow_html=True)
+                                                    st.markdown('</div>', unsafe_allow_html=True)
+                                                    dashboard_found = True
+                                                    break
+                                        except: continue
+                                if not dashboard_found:
+                                    if result_state == "SUCCESS": 
+                                        st.markdown('<div class="message-box message-info">Job succeeded, but no dashboard output details found.</div>', unsafe_allow_html=True)
+                                    else: 
+                                        st.markdown(f'<div class="message-box message-error">Job failed: {result_state}</div>', unsafe_allow_html=True)
+                            else:
+                                st.markdown('<div class="message-box message-info">Visual Conversion in progress...</div>', unsafe_allow_html=True)
                         
-                        if not dashboard_found:
-                            st.markdown('<div class="message-box message-info">No dashboard information available</div>', unsafe_allow_html=True)
-                    else:
-                        st.markdown('<div class="message-box message-info">Conversion in progress...</div>', unsafe_allow_html=True)
-                        st.progress(0.5)
-            
-                with pbi_tab_out2:
-                    col1, col2, col3, col4 = st.columns(4)
-                    with col1:
-                        st.markdown(f'<div class="metric-card"><div class="metric-label">Run ID</div><div class="metric-value">{run_id}</div></div>', unsafe_allow_html=True)
-                    with col2:
-                        status_display = result_state if result_state else life_cycle_state
-                        status_class = "status-success" if result_state == "SUCCESS" else "status-error" if result_state in ["FAILED", "TIMEDOUT"] else "status-running"
-                        st.markdown(f'<div class="metric-card"><div class="metric-label">Status</div><div class="metric-value {status_class}">{status_display}</div></div>', unsafe_allow_html=True)
-                    with col3:
-                        if st.session_state.get("pbi_conversion_start_time"):
-                            elapsed = (datetime.now() - st.session_state.pbi_conversion_start_time).seconds
-                            st.markdown(f'<div class="metric-card"><div class="metric-label">Elapsed Time</div><div class="metric-value">{elapsed}s</div></div>', unsafe_allow_html=True)
-                    with col4:
-                        url = run_status.get("run_page_url", "")
-                        if url:
-                            st.markdown(f'<div class="metric-card"><div class="metric-label">Details</div><div class="metric-value"><a href="{url}" target="_blank" style="color: #667eea;">View Logs</a></div></div>', unsafe_allow_html=True)
-                
-                    st.markdown("### Task Execution")
-                    for task in tasks:
-                        task_state = task.get("state", {})
-                        task_name = task.get("task_key", "Unknown")
-                        task_result = task_state.get("result_state", "")
-                        symbol = "[SUCCESS]" if task_result == "SUCCESS" else "[FAILED]" if task_result in ["FAILED", "TIMEDOUT"] else "[PENDING]"
-                        with st.expander(f"{symbol} {task_name}", expanded=False):
-                            st.write(f"**Status:** {task_result if task_result else task_state.get('life_cycle_state', 'UNKNOWN')}")
-                            if task.get("start_time") and task.get("end_time"):
-                                st.write(f"**Duration:** {(task['end_time'] - task['start_time']) / 1000:.2f}s")
-            
-                if auto_refresh and life_cycle_state in ["PENDING", "RUNNING"]:
-                    time.sleep(config.get("refresh_interval_seconds", 5))
-                    st.rerun()
-            except Exception as e:
-                st.markdown(f'<div class="message-box message-error">Error: {str(e)}</div>', unsafe_allow_html=True)
+                        with pv_out2:
+                            col1, col2, col3, col4 = st.columns(4)
+                            with col1:
+                                st.markdown(f'<div class="metric-card"><div class="metric-label">Run ID</div><div class="metric-value">{run_id}</div></div>', unsafe_allow_html=True)
+                            with col2:
+                                status_display = result_state if result_state else life_cycle_state
+                                status_class = "status-success" if result_state == "SUCCESS" else "status-error" if result_state in ["FAILED", "TIMEDOUT"] else "status-running"
+                                st.markdown(f'<div class="metric-card"><div class="metric-label">Status</div><div class="metric-value {status_class}">{status_display}</div></div>', unsafe_allow_html=True)
+                            with col3:
+                                if st.session_state.get("pbi_visual_start_time"):
+                                    elapsed = (datetime.now() - st.session_state.pbi_visual_start_time).seconds
+                                    st.markdown(f'<div class="metric-card"><div class="metric-label">Elapsed Time</div><div class="metric-value">{elapsed}s</div></div>', unsafe_allow_html=True)
+                            with col4:
+                                url = run_status.get("run_page_url", "")
+                                if url:
+                                    st.markdown(f'<div class="metric-card"><div class="metric-label">Details</div><div class="metric-value"><a href="{url}" target="_blank" style="color: #667eea;">View Logs</a></div></div>', unsafe_allow_html=True)
+                            
+                            st.markdown("### Task Execution")
+                            for task in tasks:
+                                task_state = task.get("state", {})
+                                task_name = task.get("task_key", "Unknown")
+                                task_result = task_state.get("result_state", "")
+                                symbol = "[SUCCESS]" if task_result == "SUCCESS" else "[FAILED]" if task_result in ["FAILED", "TIMEDOUT"] else "[PENDING]"
+                                with st.expander(f"{symbol} {task_name}", expanded=False):
+                                    st.write(f"**Status:** {task_result if task_result else task_state.get('life_cycle_state', 'UNKNOWN')}")
+                                    if task.get("start_time") and task.get("end_time"):
+                                        st.write(f"**Duration:** {(task['end_time'] - task['start_time']) / 1000:.2f}s")
+                        
+                        if auto_refresh and life_cycle_state in ["PENDING", "RUNNING"]:
+                            time.sleep(config.get("refresh_interval_seconds", 5))
+                            st.rerun()
+                    except Exception as e:
+                        st.markdown(f'<div class="message-box message-error">Error checking status: {str(e)}</div>', unsafe_allow_html=True)
+
+        # --- PBI DATA JOB HANDLER ---
+        if pbi_data_job_id:
+            if 'start_pbi_data_button' in locals() and start_pbi_data_button:
+                try:
+                    with st.spinner("Initiating Power BI Data conversion..."):
+                        run_id = trigger_job(databricks_host, databricks_token, pbi_data_job_id, None)
+                        st.session_state.pbi_data_run_id = run_id
+                        st.session_state.pbi_data_start_time = datetime.now()
+                        st.session_state.run_history.append({
+                            'source': 'powerbi', 'run_id': run_id, 'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'status': 'Started (Data)'
+                        })
+                        st.markdown(f'<div class="message-box message-success">PBI Data conversion started. Run ID: {run_id}</div>', unsafe_allow_html=True)
+                        time.sleep(1)
+                        st.rerun()
+                except Exception as e:
+                    st.markdown(f'<div class="message-box message-error">Error starting data conversion: {str(e)}</div>', unsafe_allow_html=True)
+
+            if st.session_state.get("pbi_data_run_id"):
+                with pbi_conv_tab1:
+                    try:
+                        run_id = st.session_state.pbi_data_run_id
+                        run_status = get_run_status(databricks_host, databricks_token, run_id)
+                        state = run_status.get("state", {})
+                        life_cycle_state = state.get("life_cycle_state", "UNKNOWN")
+                        result_state = state.get("result_state", "")
+                        tasks = run_status.get("tasks", [])
+                        
+                        st.markdown("---")
+                        pd_out1, pd_out2 = st.tabs(["SQL Output", "Execution Details"])
+                        
+                        with pd_out1:
+                            if life_cycle_state == "TERMINATED":
+                                if result_state == "SUCCESS":
+                                    st.markdown('<div class="message-box message-success">Data conversion completed successfully.</div>', unsafe_allow_html=True)
+                                    
+                                    task = tasks[-1] if tasks else None
+                                    if task and task.get("run_id"):
+                                        try:
+                                            task_output = get_run_output(databricks_host, databricks_token, task["run_id"])
+                                            notebook_result_raw = task_output.get("notebook_output", {}).get("result")
+                                            
+                                            if notebook_result_raw:
+                                                notebook_data = json.loads(notebook_result_raw)
+                                                generated_query = notebook_data.get("Query", "No query returned")
+                                                generated_filepath = notebook_data.get("Filepath", "")
+                                                
+                                                st.markdown('<div class="dashboard-card"><div class="dashboard-title">Generated SQL</div>', unsafe_allow_html=True)
+                                                
+                                                st.markdown("##### Final SQL Query")
+                                                st.code(generated_query, language="sql")
+                                                
+                                                if generated_filepath:
+                                                    st.markdown(f'<div class="message-box message-info">File Path: <strong>{generated_filepath}</strong></div>', unsafe_allow_html=True)
+                                                    
+                                                    with st.spinner("Reading generated file..."):
+                                                        content, error = read_volume_file(databricks_host, databricks_token, generated_filepath)
+                                                        
+                                                        if error:
+                                                            st.error(error)
+                                                        else:
+                                                            with st.expander("View File Content", expanded=True):
+                                                                st.text(content)
+                                                                st.download_button(
+                                                                    label="Download SQL File",
+                                                                    data=content,
+                                                                    file_name=os.path.basename(generated_filepath),
+                                                                    mime="application/sql"
+                                                                )
+                                                st.markdown('</div>', unsafe_allow_html=True)
+                                            else:
+                                                st.warning("Job finished but no notebook output was returned.")
+                                        except Exception as e:
+                                            st.error(f"Error parsing job output: {str(e)}")
+
+                                # EXPLICIT FAILURE HANDLING
+                                elif result_state in ["FAILED", "TIMEDOUT", "CANCELED"]:
+                                    st.markdown(f'<div class="message-box message-error">Data conversion failed. Status: {result_state}</div>', unsafe_allow_html=True)
+                                    if state.get("state_message"):
+                                        st.error(f"Error Details: {state.get('state_message')}")
+                                else:
+                                    st.markdown(f'<div class="message-box message-error">Job ended with unexpected status: {result_state}</div>', unsafe_allow_html=True)
+                            else:
+                                st.markdown(f'<div class="message-box message-info">Data conversion in progress... (State: {life_cycle_state})</div>', unsafe_allow_html=True)
+                                st.progress(0.5)
+                        
+                        with pd_out2:
+                            col1, col2, col3, col4 = st.columns(4)
+                            with col1:
+                                st.markdown(f'<div class="metric-card"><div class="metric-label">Run ID</div><div class="metric-value">{run_id}</div></div>', unsafe_allow_html=True)
+                            with col2:
+                                status_display = result_state if result_state else life_cycle_state
+                                status_class = "status-success" if result_state == "SUCCESS" else "status-error" if result_state in ["FAILED", "TIMEDOUT"] else "status-running"
+                                st.markdown(f'<div class="metric-card"><div class="metric-label">Status</div><div class="metric-value {status_class}">{status_display}</div></div>', unsafe_allow_html=True)
+                            with col3:
+                                if st.session_state.get("pbi_data_start_time"):
+                                    elapsed = (datetime.now() - st.session_state.pbi_data_start_time).seconds
+                                    st.markdown(f'<div class="metric-card"><div class="metric-label">Elapsed Time</div><div class="metric-value">{elapsed}s</div></div>', unsafe_allow_html=True)
+                            with col4:
+                                url = run_status.get("run_page_url", "")
+                                if url:
+                                    st.markdown(f'<div class="metric-card"><div class="metric-label">Details</div><div class="metric-value"><a href="{url}" target="_blank" style="color: #667eea;">View Logs</a></div></div>', unsafe_allow_html=True)
+                            
+                            st.markdown("### Task Execution")
+                            for task in tasks:
+                                task_state = task.get("state", {})
+                                task_name = task.get("task_key", "Unknown")
+                                task_result = task_state.get("result_state", "")
+                                symbol = "[SUCCESS]" if task_result == "SUCCESS" else "[FAILED]" if task_result in ["FAILED", "TIMEDOUT"] else "[PENDING]"
+                                with st.expander(f"{symbol} {task_name}", expanded=False):
+                                    st.write(f"**Status:** {task_result if task_result else task_state.get('life_cycle_state', 'UNKNOWN')}")
+                                    if task.get("start_time") and task.get("end_time"):
+                                        st.write(f"**Duration:** {(task['end_time'] - task['start_time']) / 1000:.2f}s")
+
+                        if auto_refresh and life_cycle_state in ["PENDING", "RUNNING"]:
+                            time.sleep(config.get("refresh_interval_seconds", 5))
+                            st.rerun()
+                    except Exception as e:
+                        st.markdown(f'<div class="message-box message-error">Error checking status: {str(e)}</div>', unsafe_allow_html=True)
 
 # ============================================================================
 # TABLEAU MIGRATION PANEL
@@ -1951,13 +2119,28 @@ elif st.session_state.main_panel == 'tableau':
         st.markdown('<h1 style="color: white; text-align: center; margin: 0; padding: 0.5rem 0;">Tableau to Databricks</h1>', unsafe_allow_html=True)
         st.markdown('<p style="color: rgba(255,255,255,0.9); text-align: center; margin: 0 0 1.5rem 0; font-size: 0.95rem;">Workbook Migration</p>', unsafe_allow_html=True)
         
-        if not tableau_conversion_job_id:
-            st.warning("Tableau conversion job ID not configured in config.json")
-            st.info("Please add 'tableau_conversion_job_id' to your config.json file")
-        else:
-            col1, col2, col3 = st.columns([1, 1, 1])
-            with col2:
-                start_tableau_conversion_button = st.button("Start Conversion", type="primary", use_container_width=True, key="start_tableau_conversion")
+        # New Tab structure for Tableau
+        tab_conv_tab1, tab_conv_tab2 = st.tabs(["Data Conversion", "Visual Conversion"])
+
+        # TABLEAU DATA CONVERSION
+        with tab_conv_tab1:
+            st.markdown('<p style="margin: 1rem 0;">Convert Tableau Data Sources (TDS/Extracts) to Databricks SQL</p>', unsafe_allow_html=True)
+            if not tableau_data_job_id:
+                st.warning("Tableau Data conversion job ID not configured (tableau_data_job_id)")
+            else:
+                col1, col2, col3 = st.columns([1, 1, 1])
+                with col2:
+                    start_tableau_data_button = st.button("Start Data Conversion", type="primary", use_container_width=True, key="start_tableau_data_conv")
+
+        # TABLEAU VISUAL CONVERSION
+        with tab_conv_tab2:
+            st.markdown('<p style="margin: 1rem 0;">Convert Tableau Workbooks (TWB/TWBX) to Databricks AI/BI</p>', unsafe_allow_html=True)
+            if not tableau_visual_job_id:
+                st.warning("Tableau Visual conversion job ID not configured (tableau_visual_job_id)")
+            else:
+                col1, col2, col3 = st.columns([1, 1, 1])
+                with col2:
+                    start_tableau_visual_button = st.button("Start Visual Conversion", type="primary", use_container_width=True, key="start_tableau_visual_conv")
 
     # CONFIG MANAGER TAB
     elif st.session_state.tableau_active_tab == 'config':
@@ -2028,116 +2211,222 @@ elif st.session_state.main_panel == 'tableau':
         else:
             st.info("No Tableau conversion history available in this session.")
     
-    # Process Tableau conversion job
-    if st.session_state.tableau_active_tab == 'conversion' and tableau_conversion_job_id:
+    # Process Tableau Conversion Jobs (Data & Visual)
+    if st.session_state.tableau_active_tab == 'conversion':
 
-        if 'start_tableau_conversion_button' in locals() and start_tableau_conversion_button:
-            try:
-                with st.spinner("Initiating Tableau conversion..."):
-                    run_id = trigger_job(databricks_host, databricks_token, tableau_conversion_job_id, None)
-                    st.session_state.tableau_conversion_run_id = run_id
-                    st.session_state.tableau_conversion_start_time = datetime.now()
-                    
-                    st.session_state.run_history.append({
-                        'source': 'tableau',
-                        'run_id': run_id,
-                        'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        'status': 'Started'
-                    })
-                    
-                    st.markdown(f'<div class="message-box message-success">Tableau conversion started successfully. Run ID: {run_id}</div>', unsafe_allow_html=True)
-                    time.sleep(1)
-                    st.rerun()
-            except Exception as e:
-                st.markdown(f'<div class="message-box message-error">Error starting conversion: {str(e)}</div>', unsafe_allow_html=True)
+        # --- TABLEAU VISUAL JOB HANDLER ---
+        if tableau_visual_job_id:
+            if 'start_tableau_visual_button' in locals() and start_tableau_visual_button:
+                try:
+                    with st.spinner("Initiating Tableau Visual conversion..."):
+                        run_id = trigger_job(databricks_host, databricks_token, tableau_visual_job_id, None)
+                        st.session_state.tableau_visual_run_id = run_id
+                        st.session_state.tableau_visual_start_time = datetime.now()
+                        st.session_state.run_history.append({
+                            'source': 'tableau', 'run_id': run_id, 'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'status': 'Started (Visual)'
+                        })
+                        st.markdown(f'<div class="message-box message-success">Tableau Visual conversion started. Run ID: {run_id}</div>', unsafe_allow_html=True)
+                        time.sleep(1)
+                        st.rerun()
+                except Exception as e:
+                    st.markdown(f'<div class="message-box message-error">Error starting visual conversion: {str(e)}</div>', unsafe_allow_html=True)
 
-        if st.session_state.get("tableau_conversion_run_id"):
-            try:
-                run_id = st.session_state.tableau_conversion_run_id
-                run_status = get_run_status(databricks_host, databricks_token, run_id)
-                state = run_status.get("state", {})
-                life_cycle_state = state.get("life_cycle_state", "UNKNOWN")
-                result_state = state.get("result_state", "")
-                tasks = run_status.get("tasks", [])
-            
-                st.markdown("---")
-                
-                tableau_tab_out1, tableau_tab_out2 = st.tabs(["Conversion Output", "Execution Details"])
-            
-                with tableau_tab_out1:
-                    if life_cycle_state == "TERMINATED":
-                        # Try to find the task that has notebook output with dashboard info
-                        dashboard_found = False
+            if st.session_state.get("tableau_visual_run_id"):
+                with tab_conv_tab2:
+                    try:
+                        run_id = st.session_state.tableau_visual_run_id
+                        run_status = get_run_status(databricks_host, databricks_token, run_id)
+                        state = run_status.get("state", {})
+                        life_cycle_state = state.get("life_cycle_state", "UNKNOWN")
+                        result_state = state.get("result_state", "")
+                        tasks = run_status.get("tasks", [])
                         
-                        for task in reversed(tasks):
-                            if task.get("run_id"):
-                                try:
-                                    task_output = get_run_output(databricks_host, databricks_token, task["run_id"])
-                                    notebook_output = task_output.get("notebook_output", {})
-                                    result_str = notebook_output.get("result")
-                                    
-                                    if result_str:
+                        st.markdown("---")
+                        tv_out1, tv_out2 = st.tabs(["Dashboard Output", "Execution Details"])
+                        
+                        with tv_out1:
+                            if life_cycle_state == "TERMINATED":
+                                dashboard_found = False
+                                for task in reversed(tasks):
+                                    if task.get("run_id"):
                                         try:
-                                            result_data = json.loads(result_str)
-                                            # Check if this result has dashboard info
-                                            if "dashboard_id" in result_data or "dashboard_url" in result_data:
-                                                st.markdown('<div class="dashboard-card"><div class="dashboard-title">Conversion Complete</div>', unsafe_allow_html=True)
-                                                col1, col2, col3 = st.columns(3)
-                                                with col1:
-                                                    st.markdown(f'<div class="dashboard-item"><div class="dashboard-label">Dashboard ID</div><div class="dashboard-value">{result_data.get("dashboard_id", "N/A")}</div></div>', unsafe_allow_html=True)
-                                                with col2:
-                                                    st.markdown(f'<div class="dashboard-item"><div class="dashboard-label">Dashboard Name</div><div class="dashboard-value">{result_data.get("dashboard_name", "N/A")}</div></div>', unsafe_allow_html=True)
-                                                with col3:
-                                                    url = result_data.get("dashboard_url", "")
-                                                    link_html = f'<a href="{url}" target="_blank" class="dashboard-link">Open Dashboard</a>' if url else "Not Available"
-                                                    st.markdown(f'<div class="dashboard-item"><div class="dashboard-label">Link</div><div class="dashboard-value">{link_html}</div></div>', unsafe_allow_html=True)
-                                                st.markdown('</div>', unsafe_allow_html=True)
-                                                dashboard_found = True
-                                                break
-                                        except:
-                                            continue
-                                except:
-                                    continue
-                        
-                        if not dashboard_found:
-                            if result_state == "SUCCESS":
-                                st.markdown('<div class="message-box message-success">Conversion completed successfully.</div>', unsafe_allow_html=True)
+                                            task_output = get_run_output(databricks_host, databricks_token, task["run_id"])
+                                            notebook_output = task_output.get("notebook_output", {})
+                                            result_str = notebook_output.get("result")
+                                            if result_str:
+                                                result_data = json.loads(result_str)
+                                                if "dashboard_id" in result_data or "dashboard_url" in result_data:
+                                                    st.markdown('<div class="dashboard-card"><div class="dashboard-title">Conversion Complete</div>', unsafe_allow_html=True)
+                                                    c1, c2, c3 = st.columns(3)
+                                                    with c1: st.markdown(f'<div class="dashboard-item"><div class="dashboard-label">ID</div><div class="dashboard-value">{result_data.get("dashboard_id", "N/A")}</div></div>', unsafe_allow_html=True)
+                                                    with c2: st.markdown(f'<div class="dashboard-item"><div class="dashboard-label">Name</div><div class="dashboard-value">{result_data.get("dashboard_name", "N/A")}</div></div>', unsafe_allow_html=True)
+                                                    with c3:
+                                                        url = result_data.get("dashboard_url", "")
+                                                        link = f'<a href="{url}" target="_blank" class="dashboard-link">Open</a>' if url else "N/A"
+                                                        st.markdown(f'<div class="dashboard-item"><div class="dashboard-label">Link</div><div class="dashboard-value">{link}</div></div>', unsafe_allow_html=True)
+                                                    st.markdown('</div>', unsafe_allow_html=True)
+                                                    dashboard_found = True
+                                                    break
+                                        except: continue
+                                if not dashboard_found:
+                                    if result_state == "SUCCESS": 
+                                        st.markdown('<div class="message-box message-info">Job succeeded, but no dashboard output details found.</div>', unsafe_allow_html=True)
+                                    else: 
+                                        st.markdown(f'<div class="message-box message-error">Job failed: {result_state}</div>', unsafe_allow_html=True)
                             else:
-                                st.markdown('<div class="message-box message-info">No dashboard output information available</div>', unsafe_allow_html=True)
-                    else:
-                        st.markdown('<div class="message-box message-info">Conversion in progress...</div>', unsafe_allow_html=True)
-                        st.progress(0.5)
-            
-                with tableau_tab_out2:
-                    col1, col2, col3, col4 = st.columns(4)
-                    with col1:
-                        st.markdown(f'<div class="metric-card"><div class="metric-label">Run ID</div><div class="metric-value">{run_id}</div></div>', unsafe_allow_html=True)
-                    with col2:
-                        status_display = result_state if result_state else life_cycle_state
-                        status_class = "status-success" if result_state == "SUCCESS" else "status-error" if result_state in ["FAILED", "TIMEDOUT"] else "status-running"
-                        st.markdown(f'<div class="metric-card"><div class="metric-label">Status</div><div class="metric-value {status_class}">{status_display}</div></div>', unsafe_allow_html=True)
-                    with col3:
-                        if st.session_state.get("tableau_conversion_start_time"):
-                            elapsed = (datetime.now() - st.session_state.tableau_conversion_start_time).seconds
-                            st.markdown(f'<div class="metric-card"><div class="metric-label">Elapsed Time</div><div class="metric-value">{elapsed}s</div></div>', unsafe_allow_html=True)
-                    with col4:
-                        url = run_status.get("run_page_url", "")
-                        if url:
-                            st.markdown(f'<div class="metric-card"><div class="metric-label">Details</div><div class="metric-value"><a href="{url}" target="_blank" style="color: #667eea;">View Logs</a></div></div>', unsafe_allow_html=True)
-                
-                    st.markdown("### Task Execution")
-                    for task in tasks:
-                        task_state = task.get("state", {})
-                        task_name = task.get("task_key", "Unknown")
-                        task_result = task_state.get("result_state", "")
-                        symbol = "[SUCCESS]" if task_result == "SUCCESS" else "[FAILED]" if task_result in ["FAILED", "TIMEDOUT"] else "[PENDING]"
-                        with st.expander(f"{symbol} {task_name}", expanded=False):
-                            st.write(f"**Status:** {task_result if task_result else task_state.get('life_cycle_state', 'UNKNOWN')}")
-                            if task.get("start_time") and task.get("end_time"):
-                                st.write(f"**Duration:** {(task['end_time'] - task['start_time']) / 1000:.2f}s")
-            
-                if auto_refresh and life_cycle_state in ["PENDING", "RUNNING"]:
-                    time.sleep(config.get("refresh_interval_seconds", 5))
-                    st.rerun()
-            except Exception as e:
-                st.markdown(f'<div class="message-box message-error">Error: {str(e)}</div>', unsafe_allow_html=True)
+                                st.markdown('<div class="message-box message-info">Visual Conversion in progress...</div>', unsafe_allow_html=True)
+                        
+                        with tv_out2:
+                            col1, col2, col3, col4 = st.columns(4)
+                            with col1:
+                                st.markdown(f'<div class="metric-card"><div class="metric-label">Run ID</div><div class="metric-value">{run_id}</div></div>', unsafe_allow_html=True)
+                            with col2:
+                                status_display = result_state if result_state else life_cycle_state
+                                status_class = "status-success" if result_state == "SUCCESS" else "status-error" if result_state in ["FAILED", "TIMEDOUT"] else "status-running"
+                                st.markdown(f'<div class="metric-card"><div class="metric-label">Status</div><div class="metric-value {status_class}">{status_display}</div></div>', unsafe_allow_html=True)
+                            with col3:
+                                if st.session_state.get("tableau_visual_start_time"):
+                                    elapsed = (datetime.now() - st.session_state.tableau_visual_start_time).seconds
+                                    st.markdown(f'<div class="metric-card"><div class="metric-label">Elapsed Time</div><div class="metric-value">{elapsed}s</div></div>', unsafe_allow_html=True)
+                            with col4:
+                                url = run_status.get("run_page_url", "")
+                                if url:
+                                    st.markdown(f'<div class="metric-card"><div class="metric-label">Details</div><div class="metric-value"><a href="{url}" target="_blank" style="color: #667eea;">View Logs</a></div></div>', unsafe_allow_html=True)
+                            
+                            st.markdown("### Task Execution")
+                            for task in tasks:
+                                task_state = task.get("state", {})
+                                task_name = task.get("task_key", "Unknown")
+                                task_result = task_state.get("result_state", "")
+                                symbol = "[SUCCESS]" if task_result == "SUCCESS" else "[FAILED]" if task_result in ["FAILED", "TIMEDOUT"] else "[PENDING]"
+                                with st.expander(f"{symbol} {task_name}", expanded=False):
+                                    st.write(f"**Status:** {task_result if task_result else task_state.get('life_cycle_state', 'UNKNOWN')}")
+                                    if task.get("start_time") and task.get("end_time"):
+                                        st.write(f"**Duration:** {(task['end_time'] - task['start_time']) / 1000:.2f}s")
+                        
+                        if auto_refresh and life_cycle_state in ["PENDING", "RUNNING"]:
+                            time.sleep(config.get("refresh_interval_seconds", 5))
+                            st.rerun()
+                    except Exception as e:
+                        st.markdown(f'<div class="message-box message-error">Error checking status: {str(e)}</div>', unsafe_allow_html=True)
+
+        # --- TABLEAU DATA JOB HANDLER ---
+        if tableau_data_job_id:
+            if 'start_tableau_data_button' in locals() and start_tableau_data_button:
+                try:
+                    with st.spinner("Initiating Tableau Data conversion..."):
+                        run_id = trigger_job(databricks_host, databricks_token, tableau_data_job_id, None)
+                        st.session_state.tableau_data_run_id = run_id
+                        st.session_state.tableau_data_start_time = datetime.now()
+                        st.session_state.run_history.append({
+                            'source': 'tableau', 'run_id': run_id, 'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'status': 'Started (Data)'
+                        })
+                        st.markdown(f'<div class="message-box message-success">Tableau Data conversion started. Run ID: {run_id}</div>', unsafe_allow_html=True)
+                        time.sleep(1)
+                        st.rerun()
+                except Exception as e:
+                    st.markdown(f'<div class="message-box message-error">Error starting data conversion: {str(e)}</div>', unsafe_allow_html=True)
+
+            if st.session_state.get("tableau_data_run_id"):
+                with tab_conv_tab1:
+                    try:
+                        run_id = st.session_state.tableau_data_run_id
+                        run_status = get_run_status(databricks_host, databricks_token, run_id)
+                        state = run_status.get("state", {})
+                        life_cycle_state = state.get("life_cycle_state", "UNKNOWN")
+                        result_state = state.get("result_state", "")
+                        tasks = run_status.get("tasks", [])
+                        
+                        st.markdown("---")
+                        td_out1, td_out2 = st.tabs(["SQL Output", "Execution Details"])
+                        
+                        with td_out1:
+                            if life_cycle_state == "TERMINATED":
+                                if result_state == "SUCCESS":
+                                    st.markdown('<div class="message-box message-success">Data conversion completed successfully.</div>', unsafe_allow_html=True)
+                                    
+                                    task = tasks[-1] if tasks else None
+                                    if task and task.get("run_id"):
+                                        try:
+                                            task_output = get_run_output(databricks_host, databricks_token, task["run_id"])
+                                            notebook_result_raw = task_output.get("notebook_output", {}).get("result")
+                                            
+                                            if notebook_result_raw:
+                                                notebook_data = json.loads(notebook_result_raw)
+                                                generated_query = notebook_data.get("Query", "No query returned")
+                                                generated_filepath = notebook_data.get("Filepath", "")
+                                                
+                                                st.markdown('<div class="dashboard-card"><div class="dashboard-title">Generated SQL</div>', unsafe_allow_html=True)
+                                                
+                                                st.markdown("##### Final SQL Query")
+                                                st.code(generated_query, language="sql")
+                                                
+                                                if generated_filepath:
+                                                    st.markdown(f'<div class="message-box message-info">File Path: <strong>{generated_filepath}</strong></div>', unsafe_allow_html=True)
+                                                    
+                                                    with st.spinner("Reading generated file..."):
+                                                        content, error = read_volume_file(databricks_host, databricks_token, generated_filepath)
+                                                        
+                                                        if error:
+                                                            st.error(error)
+                                                        else:
+                                                            with st.expander("View File Content", expanded=True):
+                                                                st.text(content)
+                                                                st.download_button(
+                                                                    label="Download SQL File",
+                                                                    data=content,
+                                                                    file_name=os.path.basename(generated_filepath),
+                                                                    mime="application/sql"
+                                                                )
+                                                st.markdown('</div>', unsafe_allow_html=True)
+                                                
+                                            else:
+                                                st.warning("Job finished but no notebook output was returned.")
+                                                
+                                        except Exception as e:
+                                            st.error(f"Error parsing job output: {str(e)}")
+                                
+                                # EXPLICIT FAILURE HANDLING
+                                elif result_state in ["FAILED", "TIMEDOUT", "CANCELED"]:
+                                    st.markdown(f'<div class="message-box message-error">Data conversion failed. Status: {result_state}</div>', unsafe_allow_html=True)
+                                    if state.get("state_message"):
+                                        st.error(f"Error Details: {state.get('state_message')}")
+                                else:
+                                    st.markdown(f'<div class="message-box message-error">Job ended with unexpected status: {result_state}</div>', unsafe_allow_html=True)
+                            else:
+                                st.markdown(f'<div class="message-box message-info">Data conversion in progress... (State: {life_cycle_state})</div>', unsafe_allow_html=True)
+                                st.progress(0.5)
+                        
+                        with td_out2:
+                            col1, col2, col3, col4 = st.columns(4)
+                            with col1:
+                                st.markdown(f'<div class="metric-card"><div class="metric-label">Run ID</div><div class="metric-value">{run_id}</div></div>', unsafe_allow_html=True)
+                            with col2:
+                                status_display = result_state if result_state else life_cycle_state
+                                status_class = "status-success" if result_state == "SUCCESS" else "status-error" if result_state in ["FAILED", "TIMEDOUT"] else "status-running"
+                                st.markdown(f'<div class="metric-card"><div class="metric-label">Status</div><div class="metric-value {status_class}">{status_display}</div></div>', unsafe_allow_html=True)
+                            with col3:
+                                if st.session_state.get("tableau_data_start_time"):
+                                    elapsed = (datetime.now() - st.session_state.tableau_data_start_time).seconds
+                                    st.markdown(f'<div class="metric-card"><div class="metric-label">Elapsed Time</div><div class="metric-value">{elapsed}s</div></div>', unsafe_allow_html=True)
+                            with col4:
+                                url = run_status.get("run_page_url", "")
+                                if url:
+                                    st.markdown(f'<div class="metric-card"><div class="metric-label">Details</div><div class="metric-value"><a href="{url}" target="_blank" style="color: #667eea;">View Logs</a></div></div>', unsafe_allow_html=True)
+                            
+                            st.markdown("### Task Execution")
+                            for task in tasks:
+                                task_state = task.get("state", {})
+                                task_name = task.get("task_key", "Unknown")
+                                task_result = task_state.get("result_state", "")
+                                symbol = "[SUCCESS]" if task_result == "SUCCESS" else "[FAILED]" if task_result in ["FAILED", "TIMEDOUT"] else "[PENDING]"
+                                with st.expander(f"{symbol} {task_name}", expanded=False):
+                                    st.write(f"**Status:** {task_result if task_result else task_state.get('life_cycle_state', 'UNKNOWN')}")
+                                    if task.get("start_time") and task.get("end_time"):
+                                        st.write(f"**Duration:** {(task['end_time'] - task['start_time']) / 1000:.2f}s")
+
+                        if auto_refresh and life_cycle_state in ["PENDING", "RUNNING"]:
+                            time.sleep(config.get("refresh_interval_seconds", 5))
+                            st.rerun()
+                    except Exception as e:
+                        st.markdown(f'<div class="message-box message-error">Error checking status: {str(e)}</div>', unsafe_allow_html=True)
