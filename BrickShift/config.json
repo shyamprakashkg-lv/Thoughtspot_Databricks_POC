@@ -8,6 +8,8 @@
   "pbi_discovery_job_id": "1028536310801462",
   "tableau_conversion_job_id":"672646956545660",
   "genie_space_id": "01f100214fff1cbe9eb27ce5c1cf7dea",
+  "pbi_data_job_id": "579366551095956",
+  "tableau_data_job_id": "383020148143919",
   "auto_refresh": true,
   "show_logs": true,
   "refresh_interval_seconds": 5
