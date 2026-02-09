@@ -10,6 +10,8 @@ env:
     valueFrom: secret
   - name: JOB_ID
     value: "319455235888743"
+  - name: PBI_CLIENT_SECRET
+    valueFrom: pbisecret
 
 resources:
   - name: default

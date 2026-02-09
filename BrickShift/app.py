@@ -5,6 +5,16 @@ import json
 from datetime import datetime
 import os
 import pandas as pd
+from fpdf import FPDF
+import uuid
+import re
+# Import the utils from the prototype
+import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), '..')) # Adjust based on folder structure
+try:
+    from utils import powerbi_export, vision_engine
+except ImportError:
+    pass # Handle gracefully if files missing
 
 # Page configuration
 st.set_page_config(
@@ -396,32 +406,35 @@ st.markdown("""
     }
 
     /* ------------------------------------------------ */
-    /* FIXED: Genie Widget at Bottom of Sidebar */
+    /* FIXED: Sidebar Footer Container                  */
     /* ------------------------------------------------ */
     .genie-widget-container {
         position: fixed;
         bottom: 0;
         left: 0;
-        width: 21rem; /* Standard Streamlit sidebar width */
-        padding: 1rem; /* Matches Streamlit's default sidebar padding */
-        z-index: 99999; /* Force it to stay on top */
-        background-color: #0f172a; /* Match your sidebar background color */
-        border-top: 1px solid #334155; /* Optional: Separator line */
-        box-sizing: border-box; /* Ensures padding doesn't expand the width */
+        width: 21rem;
+        padding: 1rem;
+        z-index: 99999;
+        background-color: #0f172a;
+        border-top: 1px solid #334155;
+        display: flex;       /* Use Flexbox */
+        flex-direction: column; /* Stack buttons vertically */
+        gap: 0.5rem;         /* Gap between buttons */
     }
 
-    /* Force the Streamlit button container to fill the width */
+    /* Force buttons to full width */
     .genie-widget-container .stButton {
         width: 100% !important;
         margin: 0 !important;
     }
 
-    /* Style the actual button to match your other navigation buttons */
     .genie-widget-container .stButton > button {
         width: 100% !important;
-        height: auto;
-        padding: 0.5rem 1rem; /* Adjust vertical padding to match others */
-        font-weight: 600;
+        border-radius: 6px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
         
         /* Your Genie styling */
         background: linear-gradient(to right, #1e293b, #0f172a);
@@ -689,6 +702,37 @@ def get_table_data_simple(host, token, warehouse_id, table_name):
             
     except Exception as e:
         st.error(f"Exception: {str(e)}")
+        return pd.DataFrame()
+
+def get_conversion_tracker_data(host, token, warehouse_id, run_id):
+    """Get data from pbi_conversion_tracker for a specific run_id"""
+    try:
+        # Assuming run_id is stored/logged in the table, adjust the WHERE clause as needed for your table schema
+        # If the table doesn't have a run_id column, remove the WHERE clause
+        query = f"SELECT * FROM dbx_migration_poc.dbx_migration_pbi.pbi_conversion_tracker WHERE run_id = '{run_id}'"
+        
+        success, message, result = execute_sql_statement(host, token, warehouse_id, query)
+        
+        if not success:
+            # Fallback to get all data if filtering fails or just strictly last 50
+            query_fallback = "SELECT * FROM dbx_migration_poc.dbx_migration_pbi.pbi_conversion_tracker ORDER BY conversion_timestamp DESC LIMIT 50"
+            success, message, result = execute_sql_statement(host, token, warehouse_id, query_fallback)
+            if not success:
+                 return pd.DataFrame()
+
+        manifest = result.get("manifest", {})
+        schema = manifest.get("schema", {})
+        columns = [col.get("name", f"col_{i}") for i, col in enumerate(schema.get("columns", []))]
+        
+        result_obj = result.get("result", {})
+        data_array = result_obj.get("data_array", [])
+        
+        if data_array and columns:
+            return pd.DataFrame(data_array, columns=columns)
+        else:
+            return pd.DataFrame()
+
+    except Exception as e:
         return pd.DataFrame()
 
 def get_table_data_for_config(host, token, warehouse_id, table_name):
@@ -964,6 +1008,195 @@ def read_volume_file(host, token, file_path):
             return content, None
     except Exception as e:
         return None, f"Error reading file: {str(e)}"
+# ============================================================================
+# VALIDATOR MODULE (Integrated)
+# ============================================================================
+
+class SmartPDF(FPDF):
+    def header(self):
+        self.set_font('Arial', 'B', 12)
+        self.set_text_color(100, 100, 100)
+        self.cell(0, 10, 'BrickShift Migration Report', 0, 0, 'R')
+        self.ln(15)
+
+    def footer(self):
+        self.set_y(-15)
+        self.set_font('Arial', 'I', 8)
+        self.set_text_color(128, 128, 128)
+        self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
+
+    def write_markdown(self, text):
+        self.set_text_color(0, 0, 0)
+        # Basic markdown parser logic from prototype
+        lines = text.split('\n')
+        for line in lines:
+            line = line.encode('latin-1', 'replace').decode('latin-1').strip()
+            if not line:
+                self.ln(2)
+                continue
+            if line.startswith('# '):
+                self.ln(5)
+                self.set_font("Arial", 'B', 16)
+                self.set_text_color(37, 99, 235) 
+                self.cell(0, 10, line.replace('# ', '').upper(), 0, 1)
+                self.set_text_color(0, 0, 0) 
+            elif line.startswith('## '):
+                self.ln(3)
+                self.set_font("Arial", 'B', 13)
+                self.cell(0, 8, line.replace('## ', ''), 0, 1)
+            elif line.startswith('- ') or line.startswith('* '):
+                self.set_font("Arial", '', 10)
+                self.cell(5)
+                self.cell(3, 5, chr(149), 0, 0)
+                self.multi_cell(0, 6, line[2:])
+            else:
+                self.set_font("Arial", '', 10)
+                self.multi_cell(0, 6, line)
+
+def generate_report_pdf(summary, details, session_id):
+    pdf = SmartPDF()
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.set_font("Arial", 'B', 20)
+    pdf.cell(0, 15, "Validation Analysis Result", 0, 1, 'L')
+    pdf.set_fill_color(245, 247, 250)
+    pdf.rect(10, pdf.get_y(), 190, 20, 'F')
+    pdf.set_y(pdf.get_y() + 5)
+    pdf.set_font("Arial", '', 10)
+    pdf.set_x(15)
+    pdf.cell(90, 6, f"Session ID: {session_id[:8]}...", 0, 0)
+    pdf.cell(90, 6, f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}", 0, 1)
+    pdf.ln(15)
+    pdf.write_markdown(summary)
+    pdf.ln(10)
+    pdf.write_markdown(details)
+    return pdf.output(dest='S').encode('latin-1')
+
+@st.dialog("🛡️ BrickShift Validator", width="large")
+def open_validator_modal():
+    # --- REQUIREMENT 1: CSS to widen the modal beyond standard "large" ---
+    st.markdown("""
+    <style>
+        div[data-testid="stDialog"] div[role="dialog"] {
+            width: 80vw !important; /* Increase width to 80% of viewport */
+            max-width: 1200px !important;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # --- REQUIREMENT 2: Model Information ---
+    st.info("⚡ **Model:** Databricks Claude Opus")
+    st.caption("Automated Visual Regression Testing: Power BI vs Databricks")
+    
+    # --- CONFIGURATION (Load from config.json in production) ---
+    PBI_TENANT_ID = config.get("pbi_tenant_id", "b080f019-905d-405c-960a-013fccc761dd")
+    PBI_CLIENT_ID = config.get("pbi_client_id", "890f9089-9d42-4e9b-b4a6-18957f4b87bd")
+    PBI_CLIENT_SECRET = pbi_client_secret
+    
+    DB_TOKEN = databricks_token 
+    ENDPOINT_OPUS = config.get("endpoint_opus", "https://adb-3666479212731434.14.azuredatabricks.net/serving-endpoints/databricks-claude-opus-4-6/invocations")
+    ENDPOINT_HAIKU = config.get("endpoint_haiku", "https://adb-3666479212731434.14.azuredatabricks.net/serving-endpoints/databricks-claude-haiku-4-5/invocations")
+
+    col_export, col_validate = st.columns(2)
+
+    # --- COLUMN 1: EXPORT ---
+    with col_export:
+        st.markdown("### 1. Source Snapshot")
+        pbi_url = st.text_input("Power BI Report URL", placeholder="https://app.powerbi.com/...")
+        
+        # FIX 1: Removed st.rerun() to keep dialog open
+        if st.button("🚀 Start Export", type="primary", use_container_width=True, key="val_export_btn"):
+            if not pbi_url:
+                st.warning("Please provide a URL.")
+            else:
+                with st.spinner("Snapshotting Source..."):
+                    try:
+                        result = powerbi_export.export_from_url(pbi_url, PBI_TENANT_ID, PBI_CLIENT_ID, PBI_CLIENT_SECRET)
+                        if result.get("export_status") == "success":
+                            st.session_state['export_result'] = result
+                            st.success("Export Complete!")
+                            # Removed st.rerun() here
+                        else:
+                            st.error(f"Error: {result.get('error')}")
+                    except Exception as e:
+                        st.error(f"Critical: {str(e)}")
+
+        if 'export_result' in st.session_state:
+            res = st.session_state['export_result']
+            # Using a container for consistent styling
+            st.markdown(f"""
+            <div style="margin-top: 10px; padding: 10px; border: 1px solid #334155; border-radius: 5px; background: #1e293b;">
+                <div style="font-size: 0.8em; color: #94a3b8;">READY FOR ANALYSIS</div>
+                <div style="color: #f8fafc;">📄 {res['filename']}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    # --- COLUMN 2: VALIDATE ---
+    with col_validate:
+        st.markdown("### 2. AI Validation")
+        
+        if 'export_result' not in st.session_state:
+            st.info("👈 Complete Step 1 first.")
+        else:
+            source_path = st.session_state['export_result']['file_path']
+            session_id = st.session_state['export_result']['session_id']
+            target_pdf = st.file_uploader("Upload Databricks PDF", type=["pdf"], key="val_upload")
+            
+            # FIX 1: Removed st.rerun()
+            if st.button("🤖 Run Comparison", type="primary", use_container_width=True, key="val_run_btn"):
+                if not target_pdf:
+                    st.warning("Upload target PDF.")
+                else:
+                    os.makedirs("exports", exist_ok=True)
+                    target_path = os.path.join("exports", target_pdf.name)
+                    with open(target_path, "wb") as f: f.write(target_pdf.getbuffer())
+                    
+                    try:
+                        with st.spinner("Analyzing pixels & data..."):
+                            # 1. Encode
+                            source_b64 = vision_engine.encode_pdf_to_base64(source_path)
+                            target_b64 = vision_engine.encode_pdf_to_base64(target_path)
+                            
+                            # 2. Vision Analysis
+                            s1 = vision_engine.run_stage1_analysis(source_b64, target_b64, ENDPOINT_OPUS, DB_TOKEN, "PowerBI", "Claude Opus")
+                            if s1["status"] == "error": raise Exception(s1["error"])
+                            
+                            # 3. Summarization
+                            s2 = vision_engine.run_stage2_summarization(s1["detailed_analysis"], ENDPOINT_HAIKU, DB_TOKEN, "Claude Haiku")
+                            
+                            final_result = {
+                                "session_id": session_id,
+                                "detailed_analysis": s1["detailed_analysis"],
+                                "executive_summary": s2["summary"]
+                            }
+                            st.session_state['current_report'] = final_result
+                            st.success("Validation Complete!")
+                            # Removed st.rerun() here
+                    except Exception as e:
+                        st.error(f"Validation Failed: {str(e)}")
+
+    st.markdown("---")
+
+    # --- REPORTING SECTION ---
+    # This block automatically renders if 'current_report' exists in session state
+    if 'current_report' in st.session_state:
+        report = st.session_state['current_report']
+        st.markdown("### 📊 Analysis Report")
+        
+        # Download Button
+        pdf_bytes = generate_report_pdf(report['executive_summary'], report['detailed_analysis'], report['session_id'])
+        st.download_button(
+            label="📥 Download PDF Report",
+            data=pdf_bytes,
+            file_name="Migration_Report.pdf",
+            mime="application/pdf",
+            use_container_width=True
+        )
+
+        with st.expander("Executive Summary", expanded=True):
+            st.markdown(report['executive_summary'])
+        with st.expander("Detailed Findings"):
+            st.markdown(report['detailed_analysis'])
 
 # Initialize session state
 if 'run_history' not in st.session_state:
@@ -988,6 +1221,7 @@ databricks_host = normalize_host_url(config.get("databricks_host", ""))
 databricks_token = os.getenv("DATABRICKS_TOKEN")
 warehouse_id = config.get("warehouse_id", "")
 genie_space_id = config.get("genie_space_id", "")
+pbi_client_secret = os.getenv("PBI_CLIENT_SECRET")
 
 # ThoughtSpot Job IDs
 ts_visual_job_id = config.get("visual_job_id", "")
@@ -1167,21 +1401,22 @@ with st.sidebar:
             # NOTE: st.rerun() removed to prevent dialog closing
 
     # ---------------------------------------
-    # SIDEBAR FOOTER (Floating Button)
+    # SIDEBAR FOOTER (Floating Buttons)
     # ---------------------------------------
     
-    # 1. Add a spacer to ensure the normal menu items don't get hidden behind the fixed footer
-    #    when you scroll down.
-    st.markdown("<div style='height: 80px;'></div>", unsafe_allow_html=True)
+    # 1. Spacer to prevent overlap
+    st.markdown("<div style='height: 140px;'></div>", unsafe_allow_html=True)
     
-    # 2. The Fixed Footer Container
+    # 2. Container
     st.markdown('<div class="genie-widget-container">', unsafe_allow_html=True)
     
-    # 3. The Button
-    #    Note: We use use_container_width=True, but the CSS 'width: 100%' 
-    #    is the real enforcer here for the fixed element.
-    if st.button("✨Ask Genie", key="genie_trigger_btn", type="secondary", use_container_width=True):
+    # BUTTON 1: GENIE
+    if st.button("✨ Ask Genie", key="genie_trigger_btn", type="secondary", use_container_width=True):
         open_genie_chat()
+
+    # BUTTON 2: VALIDATOR (New)
+    if st.button("🛡️ Start Validation", key="validator_trigger_btn", type="secondary", use_container_width=True):
+        open_validator_modal()
         
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -1953,6 +2188,23 @@ elif st.session_state.main_panel == 'powerbi':
                                         st.markdown('<div class="message-box message-info">Job succeeded, but no dashboard output details found.</div>', unsafe_allow_html=True)
                                     else: 
                                         st.markdown(f'<div class="message-box message-error">Job failed: {result_state}</div>', unsafe_allow_html=True)
+                                
+                                # -----------------------------------------------------------
+                                # MOVED: Conversion Tracker Table to Dashboard Output Tab
+                                # -----------------------------------------------------------
+                                st.markdown("### Conversion Tracker Details")
+                                with st.spinner("Fetching tracker results..."):
+                                    tracker_df = get_conversion_tracker_data(
+                                        databricks_host, 
+                                        databricks_token, 
+                                        warehouse_id, 
+                                        run_id
+                                    )
+                                    if not tracker_df.empty:
+                                        st.dataframe(tracker_df, use_container_width=True)
+                                    else:
+                                        st.info("No tracking data available for this run.")
+
                             else:
                                 st.markdown('<div class="message-box message-info">Visual Conversion in progress...</div>', unsafe_allow_html=True)
                         
@@ -1972,7 +2224,7 @@ elif st.session_state.main_panel == 'powerbi':
                                 url = run_status.get("run_page_url", "")
                                 if url:
                                     st.markdown(f'<div class="metric-card"><div class="metric-label">Details</div><div class="metric-value"><a href="{url}" target="_blank" style="color: #667eea;">View Logs</a></div></div>', unsafe_allow_html=True)
-                            
+
                             st.markdown("### Task Execution")
                             for task in tasks:
                                 task_state = task.get("state", {})
@@ -1983,7 +2235,7 @@ elif st.session_state.main_panel == 'powerbi':
                                     st.write(f"**Status:** {task_result if task_result else task_state.get('life_cycle_state', 'UNKNOWN')}")
                                     if task.get("start_time") and task.get("end_time"):
                                         st.write(f"**Duration:** {(task['end_time'] - task['start_time']) / 1000:.2f}s")
-                        
+
                         if auto_refresh and life_cycle_state in ["PENDING", "RUNNING"]:
                             time.sleep(config.get("refresh_interval_seconds", 5))
                             st.rerun()
@@ -2059,11 +2311,13 @@ elif st.session_state.main_panel == 'powerbi':
                                                                     mime="application/sql"
                                                                 )
                                                 st.markdown('</div>', unsafe_allow_html=True)
+                                                
                                             else:
                                                 st.warning("Job finished but no notebook output was returned.")
+                                                
                                         except Exception as e:
                                             st.error(f"Error parsing job output: {str(e)}")
-
+                                
                                 # EXPLICIT FAILURE HANDLING
                                 elif result_state in ["FAILED", "TIMEDOUT", "CANCELED"]:
                                     st.markdown(f'<div class="message-box message-error">Data conversion failed. Status: {result_state}</div>', unsafe_allow_html=True)
@@ -2303,7 +2557,7 @@ elif st.session_state.main_panel == 'tableau':
                                     st.write(f"**Status:** {task_result if task_result else task_state.get('life_cycle_state', 'UNKNOWN')}")
                                     if task.get("start_time") and task.get("end_time"):
                                         st.write(f"**Duration:** {(task['end_time'] - task['start_time']) / 1000:.2f}s")
-                        
+
                         if auto_refresh and life_cycle_state in ["PENDING", "RUNNING"]:
                             time.sleep(config.get("refresh_interval_seconds", 5))
                             st.rerun()
