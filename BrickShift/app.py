@@ -1115,7 +1115,6 @@ def open_validator_modal():
                         if result.get("export_status") == "success":
                             st.session_state['export_result'] = result
                             st.success("Export Complete!")
-                            # Removed st.rerun() here
                         else:
                             st.error(f"Error: {result.get('error')}")
                     except Exception as e:
@@ -1171,7 +1170,6 @@ def open_validator_modal():
                             }
                             st.session_state['current_report'] = final_result
                             st.success("Validation Complete!")
-                            # Removed st.rerun() here
                     except Exception as e:
                         st.error(f"Validation Failed: {str(e)}")
 
@@ -1197,6 +1195,49 @@ def open_validator_modal():
             st.markdown(report['executive_summary'])
         with st.expander("Detailed Findings"):
             st.markdown(report['detailed_analysis'])
+
+# The Modal Dialog Function
+@st.dialog("✨ Genie Assistant", width="large")
+def open_genie_chat():
+    # Header (Only Caption, New Chat button removed)
+    st.caption("Powered by Databricks Genie Space")
+
+    # Display Chat History
+    for message in st.session_state.genie_messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    # Chat Input
+    if prompt := st.chat_input("Ask a question about your data..."):
+        # 1. Append User Message
+        st.session_state.genie_messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        # 2. Generate Response
+        if not genie_space_id:
+            error_msg = "⚠️ Error: 'genie_space_id' is missing in config.json."
+            st.session_state.genie_messages.append({"role": "assistant", "content": error_msg})
+            with st.chat_message("assistant"):
+                st.error(error_msg)
+        else:
+            # Call Backend API
+            conv_id, response_text = query_genie_api(
+                databricks_host, 
+                databricks_token, 
+                genie_space_id, 
+                prompt, 
+                st.session_state.genie_conversation_id
+            )
+            
+            # Update ID for context
+            if conv_id:
+                st.session_state.genie_conversation_id = conv_id
+            
+            # Append Assistant Message
+            st.session_state.genie_messages.append({"role": "assistant", "content": response_text})
+            with st.chat_message("assistant"):
+                st.markdown(response_text)
 
 # Initialize session state
 if 'run_history' not in st.session_state:
@@ -1346,7 +1387,7 @@ with st.sidebar:
             st.session_state.tableau_active_tab = 'history'
 
     # ---------------------------------------
-    # GENIE CHAT LOGIC
+    # GENIE CHAT LOGIC INIT
     # ---------------------------------------
     
     # Initialize Chat State
@@ -1354,51 +1395,6 @@ with st.sidebar:
         st.session_state.genie_messages = [{"role": "assistant", "content": "Hello! I am connected to your Databricks Dataset Space. Ask me anything about your data."}]
     if "genie_conversation_id" not in st.session_state:
         st.session_state.genie_conversation_id = None
-
-    # The Modal Dialog Function
-    @st.dialog("✨ Genie Assistant", width="large")
-    def open_genie_chat():
-        # Header (Only Caption, New Chat button removed)
-        st.caption("Powered by Databricks Genie Space")
-
-        # Display Chat History
-        for message in st.session_state.genie_messages:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
-
-        # Chat Input
-        if prompt := st.chat_input("Ask a question about your data..."):
-            # 1. Append User Message
-            st.session_state.genie_messages.append({"role": "user", "content": prompt})
-            with st.chat_message("user"):
-                st.markdown(prompt)
-
-            # 2. Generate Response
-            if not genie_space_id:
-                error_msg = "⚠️ Error: 'genie_space_id' is missing in config.json."
-                st.session_state.genie_messages.append({"role": "assistant", "content": error_msg})
-                with st.chat_message("assistant"):
-                    st.error(error_msg)
-            else:
-                # Call Backend API
-                conv_id, response_text = query_genie_api(
-                    databricks_host, 
-                    databricks_token, 
-                    genie_space_id, 
-                    prompt, 
-                    st.session_state.genie_conversation_id
-                )
-                
-                # Update ID for context
-                if conv_id:
-                    st.session_state.genie_conversation_id = conv_id
-                
-                # Append Assistant Message
-                st.session_state.genie_messages.append({"role": "assistant", "content": response_text})
-                with st.chat_message("assistant"):
-                    st.markdown(response_text)
-            
-            # NOTE: st.rerun() removed to prevent dialog closing
 
     # ---------------------------------------
     # SIDEBAR FOOTER (Floating Buttons)
@@ -1410,11 +1406,11 @@ with st.sidebar:
     # 2. Container
     st.markdown('<div class="genie-widget-container">', unsafe_allow_html=True)
     
-    # BUTTON 1: GENIE
+    # BUTTON 1: GENIE (FIXED: Using standard conditional check instead of on_click)
     if st.button("✨ Ask Genie", key="genie_trigger_btn", type="secondary", use_container_width=True):
         open_genie_chat()
 
-    # BUTTON 2: VALIDATOR (New)
+    # BUTTON 2: VALIDATOR (FIXED: Using standard conditional check instead of on_click)
     if st.button("🛡️ Start Validation", key="validator_trigger_btn", type="secondary", use_container_width=True):
         open_validator_modal()
         
@@ -1765,10 +1761,22 @@ if st.session_state.main_panel == 'thoughtspot':
                                 status_display = result_state if result_state else life_cycle_state
                                 status_class = "status-success" if result_state == "SUCCESS" else "status-error" if result_state in ["FAILED", "TIMEDOUT"] else "status-running"
                                 st.markdown(f'<div class="metric-card"><div class="metric-label">Status</div><div class="metric-value {status_class}">{status_display}</div></div>', unsafe_allow_html=True)
+                            # --- FIX APPLIED HERE ---
                             with col3:
-                                if st.session_state.get("ts_visual_start_time"):
-                                    elapsed = (datetime.now() - st.session_state.ts_visual_start_time).seconds
-                                    st.markdown(f'<div class="metric-card"><div class="metric-label">Elapsed Time</div><div class="metric-value">{elapsed}s</div></div>', unsafe_allow_html=True)
+                                elapsed = 0
+                                # If job is finished, calculate total duration from server times
+                                if life_cycle_state in ["TERMINATED", "SKIPPED", "INTERNAL_ERROR"]:
+                                    if run_status.get("start_time") and run_status.get("end_time"):
+                                        elapsed = int((run_status["end_time"] - run_status["start_time"]) / 1000)
+                                    elif st.session_state.get("ts_visual_start_time"):
+                                        # Fallback if server times missing (locks at current time)
+                                        elapsed = (datetime.now() - st.session_state.ts_visual_start_time).seconds
+                                else:
+                                    # Job is running, use live counter
+                                    if st.session_state.get("ts_visual_start_time"):
+                                        elapsed = (datetime.now() - st.session_state.ts_visual_start_time).seconds
+                                
+                                st.markdown(f'<div class="metric-card"><div class="metric-label">Elapsed Time</div><div class="metric-value">{elapsed}s</div></div>', unsafe_allow_html=True)
                             with col4:
                                 url = run_status.get("run_page_url", "")
                                 if url:
@@ -1819,62 +1827,81 @@ if st.session_state.main_panel == 'thoughtspot':
                     
                         with data_tab_out1:
                             if life_cycle_state == "TERMINATED":
-                                if result_state == "SUCCESS":
+                                # 1. Attempt to fetch notebook output first (for both Success and Failure scenarios)
+                                notebook_data = {}
+                                task = tasks[-1] if tasks else None
+                                
+                                if task and task.get("run_id"):
+                                    try:
+                                        task_output = get_run_output(databricks_host, databricks_token, task["run_id"])
+                                        notebook_result_raw = task_output.get("notebook_output", {}).get("result")
+                                        if notebook_result_raw:
+                                            # Try to parse the exit string as JSON
+                                            try:
+                                                notebook_data = json.loads(notebook_result_raw)
+                                            except json.JSONDecodeError:
+                                                # If exit string isn't JSON, treat it as a simple string or ignore
+                                                pass
+                                    except Exception as e:
+                                        # Handle API errors quietly here, will catch in generic failure if needed
+                                        pass
+
+                                # 2. CHECK FOR CUSTOM ERROR FIRST (Missing Tables)
+                                if "Error_Message" in notebook_data:
+                                    error_msg = notebook_data["Error_Message"]
+                                    st.markdown(f'''
+                                        <div class="message-box message-error">
+                                            <div style="font-weight: bold; font-size: 1.1em; margin-bottom: 0.5rem;">🛑 Validation Failure</div>
+                                            {error_msg}
+                                        </div>
+                                    ''', unsafe_allow_html=True)
+
+                                # 3. CHECK FOR STANDARD SUCCESS (No Error_Message found)
+                                elif result_state == "SUCCESS":
                                     st.markdown('<div class="message-box message-success">Data conversion completed successfully.</div>', unsafe_allow_html=True)
                                     
-                                    task = tasks[-1] if tasks else None
-                                    if task and task.get("run_id"):
-                                        try:
-                                            task_output = get_run_output(databricks_host, databricks_token, task["run_id"])
-                                            notebook_result_raw = task_output.get("notebook_output", {}).get("result")
+                                    generated_query = notebook_data.get("Query", "No query returned")
+                                    generated_filepath = notebook_data.get("Filepath", "")
+                                    
+                                    st.markdown('<div class="dashboard-card"><div class="dashboard-title">Generated SQL</div>', unsafe_allow_html=True)
+                                    
+                                    st.markdown("##### Final SQL Query")
+                                    st.code(generated_query, language="sql")
+                                    
+                                    if generated_filepath:
+                                        st.markdown(f'<div class="message-box message-info">File Path: <strong>{generated_filepath}</strong></div>', unsafe_allow_html=True)
+                                        
+                                        with st.spinner("Reading generated file..."):
+                                            content, error = read_volume_file(databricks_host, databricks_token, generated_filepath)
                                             
-                                            if notebook_result_raw:
-                                                notebook_data = json.loads(notebook_result_raw)
-                                                generated_query = notebook_data.get("Query", "No query returned")
-                                                generated_filepath = notebook_data.get("Filepath", "")
-                                                
-                                                st.markdown('<div class="dashboard-card"><div class="dashboard-title">Generated SQL</div>', unsafe_allow_html=True)
-                                                
-                                                st.markdown("##### Final SQL Query")
-                                                st.code(generated_query, language="sql")
-                                                
-                                                if generated_filepath:
-                                                    st.markdown(f'<div class="message-box message-info">File Path: <strong>{generated_filepath}</strong></div>', unsafe_allow_html=True)
-                                                    
-                                                    with st.spinner("Reading generated file..."):
-                                                        content, error = read_volume_file(databricks_host, databricks_token, generated_filepath)
-                                                        
-                                                        if error:
-                                                            st.error(error)
-                                                        else:
-                                                            with st.expander("View File Content", expanded=True):
-                                                                st.text(content)
-                                                                st.download_button(
-                                                                    label="Download SQL File",
-                                                                    data=content,
-                                                                    file_name=os.path.basename(generated_filepath),
-                                                                    mime="application/sql"
-                                                                )
-                                                st.markdown('</div>', unsafe_allow_html=True)
-                                                
+                                            if error:
+                                                st.error(error)
                                             else:
-                                                st.warning("Job finished but no notebook output was returned.")
-                                                
-                                        except Exception as e:
-                                            st.error(f"Error parsing job output: {str(e)}")
-                                
-                                # EXPLICIT FAILURE HANDLING
+                                                with st.expander("View File Content", expanded=True):
+                                                    st.text(content)
+                                                    st.download_button(
+                                                        label="Download SQL File",
+                                                        data=content,
+                                                        file_name=os.path.basename(generated_filepath),
+                                                        mime="application/sql"
+                                                    )
+                                    st.markdown('</div>', unsafe_allow_html=True)
+
+                                # 4. CHECK FOR GENERIC FAILURE (Job failed, but no specific JSON exit message)
                                 elif result_state in ["FAILED", "TIMEDOUT", "CANCELED"]:
                                     st.markdown(f'<div class="message-box message-error">Data conversion failed. Status: {result_state}</div>', unsafe_allow_html=True)
                                     if state.get("state_message"):
                                         st.error(f"Error Details: {state.get('state_message')}")
                                 else:
                                     st.markdown(f'<div class="message-box message-error">Job ended with unexpected status: {result_state}</div>', unsafe_allow_html=True)
+                            
                             else:
+                                # RUNNING STATE
                                 st.markdown(f'<div class="message-box message-info">Data conversion in progress... (State: {life_cycle_state})</div>', unsafe_allow_html=True)
                                 st.progress(0.5)
                     
                         with data_tab_out2:
+                            # ... (Keep existing execution details logic) ...
                             col1, col2, col3, col4 = st.columns(4)
                             with col1:
                                 st.markdown(f'<div class="metric-card"><div class="metric-label">Run ID</div><div class="metric-value">{run_id}</div></div>', unsafe_allow_html=True)
@@ -1883,9 +1910,17 @@ if st.session_state.main_panel == 'thoughtspot':
                                 status_class = "status-success" if result_state == "SUCCESS" else "status-error" if result_state in ["FAILED", "TIMEDOUT"] else "status-running"
                                 st.markdown(f'<div class="metric-card"><div class="metric-label">Status</div><div class="metric-value {status_class}">{status_display}</div></div>', unsafe_allow_html=True)
                             with col3:
-                                if st.session_state.get("ts_data_start_time"):
-                                    elapsed = (datetime.now() - st.session_state.ts_data_start_time).seconds
-                                    st.markdown(f'<div class="metric-card"><div class="metric-label">Elapsed Time</div><div class="metric-value">{elapsed}s</div></div>', unsafe_allow_html=True)
+                                elapsed = 0
+                                if life_cycle_state in ["TERMINATED", "SKIPPED", "INTERNAL_ERROR"]:
+                                    if run_status.get("start_time") and run_status.get("end_time"):
+                                        elapsed = int((run_status["end_time"] - run_status["start_time"]) / 1000)
+                                    elif st.session_state.get("ts_data_start_time"):
+                                        elapsed = (datetime.now() - st.session_state.ts_data_start_time).seconds
+                                else:
+                                    if st.session_state.get("ts_data_start_time"):
+                                        elapsed = (datetime.now() - st.session_state.ts_data_start_time).seconds
+                                
+                                st.markdown(f'<div class="metric-card"><div class="metric-label">Elapsed Time</div><div class="metric-value">{elapsed}s</div></div>', unsafe_allow_html=True)
                             with col4:
                                 url = run_status.get("run_page_url", "")
                                 if url:
@@ -1901,10 +1936,11 @@ if st.session_state.main_panel == 'thoughtspot':
                                     st.write(f"**Status:** {task_result if task_result else task_state.get('life_cycle_state', 'UNKNOWN')}")
                                     if task.get("start_time") and task.get("end_time"):
                                         st.write(f"**Duration:** {(task['end_time'] - task['start_time']) / 1000:.2f}s")
-                    
+
                         if auto_refresh and life_cycle_state in ["PENDING", "RUNNING"]:
                             time.sleep(config.get("refresh_interval_seconds", 5))
                             st.rerun()
+                            
                     except Exception as e:
                         st.markdown(f'<div class="message-box message-error">Error: {str(e)}</div>', unsafe_allow_html=True)
 
@@ -2095,9 +2131,16 @@ elif st.session_state.main_panel == 'powerbi':
                     status_class = "status-success" if result_state == "SUCCESS" else "status-error" if result_state in ["FAILED", "TIMEDOUT"] else "status-running"
                     st.markdown(f'<div class="metric-card"><div class="metric-label">Status</div><div class="metric-value {status_class}">{status_display}</div></div>', unsafe_allow_html=True)
                 with col3:
-                    if st.session_state.get("pbi_discovery_start_time"):
-                        elapsed = (datetime.now() - st.session_state.pbi_discovery_start_time).seconds
-                        st.markdown(f'<div class="metric-card"><div class="metric-label">Elapsed Time</div><div class="metric-value">{elapsed}s</div></div>', unsafe_allow_html=True)
+                    elapsed = 0
+                    if life_cycle_state in ["TERMINATED", "SKIPPED", "INTERNAL_ERROR"]:
+                        if run_status.get("start_time") and run_status.get("end_time"):
+                            elapsed = int((run_status["end_time"] - run_status["start_time"]) / 1000)
+                        elif st.session_state.get("pbi_discovery_start_time"):
+                            elapsed = (datetime.now() - st.session_state.pbi_discovery_start_time).seconds
+                    else:
+                        if st.session_state.get("pbi_discovery_start_time"):
+                            elapsed = (datetime.now() - st.session_state.pbi_discovery_start_time).seconds
+                    st.markdown(f'<div class="metric-card"><div class="metric-label">Elapsed Time</div><div class="metric-value">{elapsed}s</div></div>', unsafe_allow_html=True)
                 with col4:
                     url = run_status.get("run_page_url", "")
                     if url:
@@ -2217,9 +2260,16 @@ elif st.session_state.main_panel == 'powerbi':
                                 status_class = "status-success" if result_state == "SUCCESS" else "status-error" if result_state in ["FAILED", "TIMEDOUT"] else "status-running"
                                 st.markdown(f'<div class="metric-card"><div class="metric-label">Status</div><div class="metric-value {status_class}">{status_display}</div></div>', unsafe_allow_html=True)
                             with col3:
-                                if st.session_state.get("pbi_visual_start_time"):
-                                    elapsed = (datetime.now() - st.session_state.pbi_visual_start_time).seconds
-                                    st.markdown(f'<div class="metric-card"><div class="metric-label">Elapsed Time</div><div class="metric-value">{elapsed}s</div></div>', unsafe_allow_html=True)
+                                elapsed = 0
+                                if life_cycle_state in ["TERMINATED", "SKIPPED", "INTERNAL_ERROR"]:
+                                    if run_status.get("start_time") and run_status.get("end_time"):
+                                        elapsed = int((run_status["end_time"] - run_status["start_time"]) / 1000)
+                                    elif st.session_state.get("pbi_visual_start_time"):
+                                        elapsed = (datetime.now() - st.session_state.pbi_visual_start_time).seconds
+                                else:
+                                    if st.session_state.get("pbi_visual_start_time"):
+                                        elapsed = (datetime.now() - st.session_state.pbi_visual_start_time).seconds
+                                st.markdown(f'<div class="metric-card"><div class="metric-label">Elapsed Time</div><div class="metric-value">{elapsed}s</div></div>',   unsafe_allow_html=True)
                             with col4:
                                 url = run_status.get("run_page_url", "")
                                 if url:
@@ -2338,9 +2388,16 @@ elif st.session_state.main_panel == 'powerbi':
                                 status_class = "status-success" if result_state == "SUCCESS" else "status-error" if result_state in ["FAILED", "TIMEDOUT"] else "status-running"
                                 st.markdown(f'<div class="metric-card"><div class="metric-label">Status</div><div class="metric-value {status_class}">{status_display}</div></div>', unsafe_allow_html=True)
                             with col3:
-                                if st.session_state.get("pbi_data_start_time"):
-                                    elapsed = (datetime.now() - st.session_state.pbi_data_start_time).seconds
-                                    st.markdown(f'<div class="metric-card"><div class="metric-label">Elapsed Time</div><div class="metric-value">{elapsed}s</div></div>', unsafe_allow_html=True)
+                                elapsed = 0
+                                if life_cycle_state in ["TERMINATED", "SKIPPED", "INTERNAL_ERROR"]:
+                                    if run_status.get("start_time") and run_status.get("end_time"):
+                                        elapsed = int((run_status["end_time"] - run_status["start_time"]) / 1000)
+                                    elif st.session_state.get("pbi_data_start_time"):
+                                        elapsed = (datetime.now() - st.session_state.pbi_data_start_time).seconds
+                                else:
+                                    if st.session_state.get("pbi_data_start_time"):
+                                        elapsed = (datetime.now() - st.session_state.pbi_data_start_time).seconds
+                                st.markdown(f'<div class="metric-card"><div class="metric-label">Elapsed Time</div><div class="metric-value">{elapsed}s</div></div>',   unsafe_allow_html=True)
                             with col4:
                                 url = run_status.get("run_page_url", "")
                                 if url:
@@ -2539,9 +2596,16 @@ elif st.session_state.main_panel == 'tableau':
                                 status_class = "status-success" if result_state == "SUCCESS" else "status-error" if result_state in ["FAILED", "TIMEDOUT"] else "status-running"
                                 st.markdown(f'<div class="metric-card"><div class="metric-label">Status</div><div class="metric-value {status_class}">{status_display}</div></div>', unsafe_allow_html=True)
                             with col3:
-                                if st.session_state.get("tableau_visual_start_time"):
-                                    elapsed = (datetime.now() - st.session_state.tableau_visual_start_time).seconds
-                                    st.markdown(f'<div class="metric-card"><div class="metric-label">Elapsed Time</div><div class="metric-value">{elapsed}s</div></div>', unsafe_allow_html=True)
+                                elapsed = 0
+                                if life_cycle_state in ["TERMINATED", "SKIPPED", "INTERNAL_ERROR"]:
+                                    if run_status.get("start_time") and run_status.get("end_time"):
+                                        elapsed = int((run_status["end_time"] - run_status["start_time"]) / 1000)
+                                    elif st.session_state.get("tableau_visual_start_time"):
+                                        elapsed = (datetime.now() - st.session_state.tableau_visual_start_time).seconds
+                                else:
+                                    if st.session_state.get("tableau_visual_start_time"):
+                                        elapsed = (datetime.now() - st.session_state.tableau_visual_start_time).seconds
+                                st.markdown(f'<div class="metric-card"><div class="metric-label">Elapsed Time</div><div class="metric-value">{elapsed}s</div></div>', unsafe_allow_html=True)
                             with col4:
                                 url = run_status.get("run_page_url", "")
                                 if url:
@@ -2660,9 +2724,16 @@ elif st.session_state.main_panel == 'tableau':
                                 status_class = "status-success" if result_state == "SUCCESS" else "status-error" if result_state in ["FAILED", "TIMEDOUT"] else "status-running"
                                 st.markdown(f'<div class="metric-card"><div class="metric-label">Status</div><div class="metric-value {status_class}">{status_display}</div></div>', unsafe_allow_html=True)
                             with col3:
-                                if st.session_state.get("tableau_data_start_time"):
-                                    elapsed = (datetime.now() - st.session_state.tableau_data_start_time).seconds
-                                    st.markdown(f'<div class="metric-card"><div class="metric-label">Elapsed Time</div><div class="metric-value">{elapsed}s</div></div>', unsafe_allow_html=True)
+                                elapsed = 0
+                                if life_cycle_state in ["TERMINATED", "SKIPPED", "INTERNAL_ERROR"]:
+                                    if run_status.get("start_time") and run_status.get("end_time"):
+                                        elapsed = int((run_status["end_time"] - run_status["start_time"]) / 1000)
+                                    elif st.session_state.get("tableau_data_start_time"):
+                                        elapsed = (datetime.now() - st.session_state.tableau_data_start_time).seconds
+                                else:
+                                    if st.session_state.get("tableau_data_start_time"):
+                                        elapsed = (datetime.now() - st.session_state.tableau_data_start_time).seconds
+                                st.markdown(f'<div class="metric-card"><div class="metric-label">Elapsed Time</div><div class="metric-value">{elapsed}s</div></div>', unsafe_allow_html=True)
                             with col4:
                                 url = run_status.get("run_page_url", "")
                                 if url:
