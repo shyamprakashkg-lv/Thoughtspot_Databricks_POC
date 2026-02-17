@@ -8,8 +8,9 @@ import pandas as pd
 from fpdf import FPDF
 import uuid
 import re
-# Import the utils from the prototype
 import sys
+
+# Import the utils from the prototype
 sys.path.append(os.path.join(os.path.dirname(__file__), '..')) # Adjust based on folder structure
 try:
     from utils import powerbi_export, vision_engine
@@ -434,7 +435,6 @@ st.markdown("""
         display: flex;
         justify-content: center;
         align-items: center;
-    }
         
         /* Your Genie styling */
         background: linear-gradient(to right, #1e293b, #0f172a);
@@ -1008,8 +1008,9 @@ def read_volume_file(host, token, file_path):
             return content, None
     except Exception as e:
         return None, f"Error reading file: {str(e)}"
+    
 # ============================================================================
-# VALIDATOR MODULE (Integrated)
+# VALIDATOR MODULE (Updated: Removed Modal Decorator)
 # ============================================================================
 
 class SmartPDF(FPDF):
@@ -1072,28 +1073,23 @@ def generate_report_pdf(summary, details, session_id):
     pdf.write_markdown(details)
     return pdf.output(dest='S').encode('latin-1')
 
-@st.dialog("🛡️ BrickShift Validator", width="large")
-def open_validator_modal():
-    # --- REQUIREMENT 1: CSS to widen the modal beyond standard "large" ---
-    st.markdown("""
-    <style>
-        div[data-testid="stDialog"] div[role="dialog"] {
-            width: 80vw !important; /* Increase width to 80% of viewport */
-            max-width: 1200px !important;
-        }
-    </style>
-    """, unsafe_allow_html=True)
-
-    # --- REQUIREMENT 2: Model Information ---
+def render_validator_section():
+    """
+    Renders the Validator UI logic directly into the page (moved from modal).
+    """
+    
+    # --- REQUIREMENT: Model Information ---
     st.info("⚡ **Model:** Databricks Claude Opus")
     st.caption("Automated Visual Regression Testing: Power BI vs Databricks")
     
     # --- CONFIGURATION (Load from config.json in production) ---
+    config = load_config() # Helper to access config if needed locally
+    
     PBI_TENANT_ID = config.get("pbi_tenant_id", "b080f019-905d-405c-960a-013fccc761dd")
     PBI_CLIENT_ID = config.get("pbi_client_id", "890f9089-9d42-4e9b-b4a6-18957f4b87bd")
-    PBI_CLIENT_SECRET = pbi_client_secret
+    PBI_CLIENT_SECRET = os.getenv("PBI_CLIENT_SECRET")
     
-    DB_TOKEN = databricks_token 
+    DB_TOKEN = os.getenv("DATABRICKS_TOKEN")
     ENDPOINT_OPUS = config.get("endpoint_opus", "https://adb-3666479212731434.14.azuredatabricks.net/serving-endpoints/databricks-claude-opus-4-6/invocations")
     ENDPOINT_HAIKU = config.get("endpoint_haiku", "https://adb-3666479212731434.14.azuredatabricks.net/serving-endpoints/databricks-claude-haiku-4-5/invocations")
 
@@ -1102,9 +1098,8 @@ def open_validator_modal():
     # --- COLUMN 1: EXPORT ---
     with col_export:
         st.markdown("### 1. Source Snapshot")
-        pbi_url = st.text_input("Power BI Report URL", placeholder="https://app.powerbi.com/...")
+        pbi_url = st.text_input("Power BI Report URL", placeholder="https://app.powerbi.com/...", key="val_input_url")
         
-        # FIX 1: Removed st.rerun() to keep dialog open
         if st.button("🚀 Start Export", type="primary", use_container_width=True, key="val_export_btn"):
             if not pbi_url:
                 st.warning("Please provide a URL.")
@@ -1141,7 +1136,6 @@ def open_validator_modal():
             session_id = st.session_state['export_result']['session_id']
             target_pdf = st.file_uploader("Upload Databricks PDF", type=["pdf"], key="val_upload")
             
-            # FIX 1: Removed st.rerun()
             if st.button("🤖 Run Comparison", type="primary", use_container_width=True, key="val_run_btn"):
                 if not target_pdf:
                     st.warning("Upload target PDF.")
@@ -1176,7 +1170,6 @@ def open_validator_modal():
     st.markdown("---")
 
     # --- REPORTING SECTION ---
-    # This block automatically renders if 'current_report' exists in session state
     if 'current_report' in st.session_state:
         report = st.session_state['current_report']
         st.markdown("### 📊 Analysis Report")
@@ -1196,7 +1189,7 @@ def open_validator_modal():
         with st.expander("Detailed Findings"):
             st.markdown(report['detailed_analysis'])
 
-# The Modal Dialog Function
+# The Modal Dialog Function for Genie (unchanged)
 @st.dialog("✨ Genie Assistant", width="large")
 def open_genie_chat():
     # Header (Only Caption, New Chat button removed)
@@ -1215,6 +1208,11 @@ def open_genie_chat():
             st.markdown(prompt)
 
         # 2. Generate Response
+        config = load_config()
+        genie_space_id = config.get("genie_space_id", "")
+        databricks_host = normalize_host_url(config.get("databricks_host", ""))
+        databricks_token = os.getenv("DATABRICKS_TOKEN")
+
         if not genie_space_id:
             error_msg = "⚠️ Error: 'genie_space_id' is missing in config.json."
             st.session_state.genie_messages.append({"role": "assistant", "content": error_msg})
@@ -1406,13 +1404,11 @@ with st.sidebar:
     # 2. Container
     st.markdown('<div class="genie-widget-container">', unsafe_allow_html=True)
     
-    # BUTTON 1: GENIE (FIXED: Using standard conditional check instead of on_click)
+    # BUTTON 1: GENIE
     if st.button("✨ Ask Genie", key="genie_trigger_btn", type="secondary", use_container_width=True):
         open_genie_chat()
 
-    # BUTTON 2: VALIDATOR (FIXED: Using standard conditional check instead of on_click)
-    if st.button("🛡️ Start Validation", key="validator_trigger_btn", type="secondary", use_container_width=True):
-        open_validator_modal()
+    # NOTE: VALIDATOR BUTTON REMOVED FROM HERE as requested
         
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -1426,7 +1422,8 @@ if st.session_state.main_panel == 'thoughtspot':
         st.markdown('<h1 style="color: white; text-align: center; margin: 0; padding: 0.5rem 0;">ThoughtSpot to Databricks</h1>', unsafe_allow_html=True)
         st.markdown('<p style="color: rgba(255,255,255,0.9); text-align: center; margin: 0 0 1.5rem 0; font-size: 0.95rem;">Dashboard Migration</p>', unsafe_allow_html=True)
         
-        conversion_tab1, conversion_tab2 = st.tabs(["Data Conversion", "Visual Conversion"])
+        # UPDATED: Added Validator Tab
+        conversion_tab1, conversion_tab2, conversion_tab3 = st.tabs(["Data Conversion", "Visual Conversion", "Migration Validator"])
         
         # DATA CONVERSION TAB
         with conversion_tab1:
@@ -1450,6 +1447,10 @@ if st.session_state.main_panel == 'thoughtspot':
                 col1, col2, col3 = st.columns([1, 1, 1])
                 with col2:
                     start_visual_button = st.button("Start Visual Conversion", type="primary", use_container_width=True, key="start_ts_visual_conv")
+                    
+        # VALIDATOR TAB (Placeholder)
+        with conversion_tab3:
+            st.markdown('<div class="coming-soon-screen"><div class="coming-soon-title">ThoughtSpot Validator</div><div class="coming-soon-text">Visual regression testing and automated validation for ThoughtSpot migrations is currently under development.</div><div class="coming-soon-badge">Coming Soon</div></div>', unsafe_allow_html=True)
                 
     # CONFIG MANAGER TAB
     elif st.session_state.ts_active_tab == 'config':
@@ -1954,8 +1955,8 @@ elif st.session_state.main_panel == 'powerbi':
         st.markdown('<h1 style="color: white; text-align: center; margin: 0; padding: 0.5rem 0;">Power BI to Databricks</h1>', unsafe_allow_html=True)
         st.markdown('<p style="color: rgba(255,255,255,0.9); text-align: center; margin: 0 0 1.5rem 0; font-size: 0.95rem;">Dashboard Migration</p>', unsafe_allow_html=True)
         
-        # New Tab structure for PBI
-        pbi_conv_tab1, pbi_conv_tab2 = st.tabs(["Data Conversion", "Visual Conversion"])
+        # New Tab structure for PBI (Includes Validator)
+        pbi_conv_tab1, pbi_conv_tab2, pbi_conv_tab3 = st.tabs(["Data Conversion", "Visual Conversion", "Migration Validator"])
 
         # PBI DATA CONVERSION
         with pbi_conv_tab1:
@@ -1978,6 +1979,12 @@ elif st.session_state.main_panel == 'powerbi':
                 col1, col2, col3 = st.columns([1, 1, 1])
                 with col2:
                     start_pbi_visual_button = st.button("Start Visual Conversion", type="primary", use_container_width=True, key="start_pbi_visual_conv")
+
+        # PBI VALIDATOR (NEW SECTION)
+        with pbi_conv_tab3:
+            st.markdown('<p style="margin: 1rem 0;">Validate migration accuracy using Databricks AI</p>', unsafe_allow_html=True)
+            # Call the refactored validator function here
+            render_validator_section()
 
     # CONFIG MANAGER TAB
     elif st.session_state.pbi_active_tab == 'config':
@@ -2034,7 +2041,7 @@ elif st.session_state.main_panel == 'powerbi':
                                         st.error(message)
                     else:
                         st.warning("No data to display")
-    
+
     # HISTORY TAB
     elif st.session_state.pbi_active_tab == 'history':
         st.markdown('<h1 style="color: white;">Power BI Conversion History</h1>', unsafe_allow_html=True)
@@ -2431,7 +2438,7 @@ elif st.session_state.main_panel == 'tableau':
         st.markdown('<p style="color: rgba(255,255,255,0.9); text-align: center; margin: 0 0 1.5rem 0; font-size: 0.95rem;">Workbook Migration</p>', unsafe_allow_html=True)
         
         # New Tab structure for Tableau
-        tab_conv_tab1, tab_conv_tab2 = st.tabs(["Data Conversion", "Visual Conversion"])
+        tab_conv_tab1, tab_conv_tab2, tab_conv_tab3 = st.tabs(["Data Conversion", "Visual Conversion", "Migration Validator"])
 
         # TABLEAU DATA CONVERSION
         with tab_conv_tab1:
@@ -2452,6 +2459,10 @@ elif st.session_state.main_panel == 'tableau':
                 col1, col2, col3 = st.columns([1, 1, 1])
                 with col2:
                     start_tableau_visual_button = st.button("Start Visual Conversion", type="primary", use_container_width=True, key="start_tableau_visual_conv")
+
+        # TABLEAU VALIDATOR (Placeholder)
+        with tab_conv_tab3:
+            st.markdown('<div class="coming-soon-screen"><div class="coming-soon-title">Tableau Validator</div><div class="coming-soon-text">Visual regression testing and automated validation for Tableau migrations is currently under development.</div><div class="coming-soon-badge">Coming Soon</div></div>', unsafe_allow_html=True)
 
     # CONFIG MANAGER TAB
     elif st.session_state.tableau_active_tab == 'config':
@@ -2508,7 +2519,7 @@ elif st.session_state.main_panel == 'tableau':
                                         st.error(message)
                     else:
                         st.warning(f"No data found or table does not exist: {table_name}")
-    
+
     # HISTORY TAB
     elif st.session_state.tableau_active_tab == 'history':
         st.markdown('<h1 style="color: white;">Tableau Conversion History</h1>', unsafe_allow_html=True)
@@ -2521,7 +2532,7 @@ elif st.session_state.main_panel == 'tableau':
             st.table(pd.DataFrame(tableau_history))
         else:
             st.info("No Tableau conversion history available in this session.")
-    
+
     # Process Tableau Conversion Jobs (Data & Visual)
     if st.session_state.tableau_active_tab == 'conversion':
 
