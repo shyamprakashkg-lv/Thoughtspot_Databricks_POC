@@ -1,6 +1,9 @@
-streamlit>=1.28.0
+streamlit>=1.39.0
 requests>=2.31.0
+pyspark==3.5.0
+extra_streamlit_components~=0.1.80
 msal
 pypdf2
 pandas
 fpdf
+typing

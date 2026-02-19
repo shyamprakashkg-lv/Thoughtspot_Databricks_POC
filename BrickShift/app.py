@@ -9,13 +9,25 @@ from fpdf import FPDF
 import uuid
 import re
 import sys
+import extra_streamlit_components as stx
 
 # Import the utils from the prototype
 sys.path.append(os.path.join(os.path.dirname(__file__), '..')) # Adjust based on folder structure
+
+# Initialize modules to None to prevent NameError later
+powerbi_export = None
+vision_engine = None
+ThoughtSpotPDFExport = None
+
 try:
-    from utils import powerbi_export, vision_engine
-except ImportError:
-    pass # Handle gracefully if files missing
+    from utils import powerbi_export
+    from utils import vision_engine
+    from utils import ThoughtSpotPDFExport
+except ImportError as e:
+    # Log the specific error to the console/driver logs so you can fix the root cause (e.g., missing library)
+    print(f"⚠️ Warning: Modules failed to import. Details: {e}")
+    # We pass here so the app still loads, but modules will be None
+    pass
 
 # Page configuration
 st.set_page_config(
@@ -24,470 +36,469 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS
+# Custom CSS - Corporate Theme (Updated for Native Icons & Alignment)
 st.markdown("""
 <style>
-    /* Professional gradient background - Deep Enterprise Blue */
+    /* IMPORTS */
+    @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
+
+    /* GLOBAL VARIABLES */
+    :root {
+        /* Backgrounds */
+        --bg-main: rgb(232, 234, 242);        
+        --bg-sidebar: rgb(51, 65, 85);        
+        --bg-card: rgb(255, 255, 255);
+        
+        /* UI Colors */
+        --slate-grey: rgb(51, 65, 85);       /* #334155 */
+        --light-grey: rgb(213, 216, 220);    /* #D5D8DC */
+        --white: rgb(255, 255, 255);         /* #FFFFFF */
+
+        /* Text Defaults */
+        --text-body: var(--slate-grey);      
+        --text-sidebar: rgb(248, 250, 252);
+        
+        /* Borders */
+        --border-strong: rgb(213, 216, 220);
+    }
+
+    /* MAIN CONTAINER SETUP */
+    .stApp {
+        background-color: var(--bg-main);
+        font-family: 'Roboto', sans-serif;
+        color: var(--slate-grey) !important;
+    }
+    
     .main {
-        background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-        padding: 0;
-        margin: 0;
+        background-color: var(--bg-main);
+    }
+
+    /* 1. FORCE MAIN PAGE TEXT TO SLATE GREY */
+    .main .block-container, 
+    .main .block-container p, 
+    .main .block-container span, 
+    .main .block-container h1, 
+    .main .block-container h2, 
+    .main .block-container h3, 
+    .main .block-container h4, 
+    .main .block-container h5, 
+    .main .block-container h6,
+    .main .block-container label,
+    .main .block-container .stMarkdown {
+        color: var(--slate-grey) !important;
     }
     
-    /* Sidebar styling */
-    [data-testid="stSidebar"] {
-        background: #0f172a;
-        padding: 1rem;
-        border-right: 1px solid #334155;
+    /* Exception: Ensure text inside Primary/Secondary buttons maintains their specific colors */
+    .stButton button p {
+        color: inherit !important;
     }
     
-    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h1,
-    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h2,
-    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h3 {
-        color: #f8fafc;
-    }
-    
-    /* Typography */
-    h1 {
-        color: #f8fafc !important;
-        margin: 0 !important;
-        padding: 0.5rem 0 !important;
-        font-family: 'Inter', sans-serif;
-    }
-    
-    h2, h3 {
-        color: #f8fafc !important;
-        font-family: 'Inter', sans-serif;
-    }
-    
-    p, li {
-        color: #cbd5e1 !important;
-    }
-    
-    /* Panel Selector Buttons */
-    .panel-selector-container {
-        display: flex;
-        gap: 1rem;
-        justify-content: center;
-        margin: 2rem auto;
-        max-width: 900px;
-    }
-    
-    /* Primary button styling */
-    .stButton > button[kind="primary"] {
-        background: #2563eb;
-        color: white;
-        border: none;
-        padding: 0.75rem 2rem;
-        font-size: 1rem;
-        font-weight: 600;
-        border-radius: 6px;
-        width: 100%;
-        min-width: 200px;
-        transition: all 0.3s ease;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-    }
-    
-    .stButton > button[kind="primary"]:hover {
-        background: #1d4ed8;
-        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
-        transform: translateY(-2px);
-    }
-    
-    .stButton > button[kind="primary"]:active {
-        transform: translateY(0px);
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    }
-    
-    /* Secondary button styling */
-    .stButton > button[kind="secondary"] {
-        background: #1e293b;
-        color: #cbd5e1;
-        border: 1px solid #475569;
-        padding: 0.75rem 1.5rem;
-        font-size: 0.95rem;
+    /* TAB STYLING */
+    .stTabs [data-baseweb="tab-list"] button [data-testid="stMarkdownContainer"] p {
+        color: var(--slate-grey) !important;
         font-weight: 500;
-        border-radius: 6px;
-        transition: all 0.3s ease;
-        height: 60px;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
     }
+    .stTabs [data-baseweb="tab-list"] button[aria-selected="true"] [data-testid="stMarkdownContainer"] p {
+        color: var(--slate-grey) !important;
+        font-weight: 700;
+    }
+
+    /* -------------------------------------- */
+    /* BUTTON STYLING                         */
+    /* -------------------------------------- */
     
+    /* A. DEFAULT STATE (Secondary) */
+    .stButton > button[kind="secondary"] {
+        background-color: var(--light-grey) !important;
+        border: 1px solid var(--slate-grey) !important;
+        padding: 0.6rem 2rem;
+        border-radius: 4px;
+        transition: all 0.2s ease;
+    }
+    .stButton > button[kind="secondary"] p {
+        color: var(--slate-grey) !important;
+    }
+
+    /* B. HOVER STATE (Secondary) */
     .stButton > button[kind="secondary"]:hover {
-        background: #334155;
-        border-color: #64748b;
-        color: #f8fafc;
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        background-color: var(--slate-grey) !important;
+        border-color: var(--slate-grey) !important;
+        color: var(--white) !important;
     }
-    
-    .stButton > button[kind="secondary"]:active {
-        transform: translateY(0px);
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-    }
-    
-    .stButton > button[kind="secondary"]:disabled {
-        background: #1e293b;
-        color: #64748b;
-        border-color: #334155;
-        opacity: 0.5;
-        cursor: not-allowed;
-        box-shadow: none;
-    }
-    
-    .stButton > button[kind="secondary"]:disabled:hover {
-        transform: none;
-        box-shadow: none;
-    }
-    
-    /* Active panel button state - Subtle glow with background color */
-    div[data-testid="column"]:has(button[kind="primary"]) button[kind="primary"] {
-        background: #1e293b !important;
-        color: #f8fafc !important;
-        border: 1px solid #64748b !important;
-        box-shadow: 
-            0 0 20px rgba(148, 163, 184, 0.4),
-            0 0 40px rgba(148, 163, 184, 0.2),
-            0 4px 12px rgba(0, 0, 0, 0.3) !important;
-        animation: subtle-pulse 3s ease-in-out infinite;
-    }
-    
-    @keyframes subtle-pulse {
-        0%, 100% {
-            box-shadow: 
-                0 0 20px rgba(148, 163, 184, 0.4),
-                0 0 40px rgba(148, 163, 184, 0.2),
-                0 4px 12px rgba(0, 0, 0, 0.3);
-        }
-        50% {
-            box-shadow: 
-                0 0 30px rgba(148, 163, 184, 0.5),
-                0 0 60px rgba(148, 163, 184, 0.3),
-                0 6px 16px rgba(0, 0, 0, 0.4);
-        }
+    .stButton > button[kind="secondary"]:hover p,
+    .stButton > button[kind="secondary"]:hover span {
+        color: var(--white) !important; 
     }
 
-    /* Top right test connection button */
-    .top-right-button {
-        position: fixed;
-        top: 1rem;
-        right: 1rem;
-        z-index: 1000;
+    /* C. SELECTED STATE (Primary) */
+    .stButton > button[kind="primary"] {
+        background-color: var(--slate-grey) !important;
+        border: 1px solid var(--slate-grey) !important;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    .stButton > button[kind="primary"] p {
+        color: var(--white) !important;
     }
 
+    /* Primary Hover */
+    .stButton > button[kind="primary"]:hover {
+        background-color: rgb(65, 80, 100) !important; 
+    }
+    .stButton > button[kind="primary"]:hover p,
+    .stButton > button[kind="primary"]:hover span {
+        color: var(--white) !important;
+    }
+
+    /* -------------------------------------- */
+    /* CONTAINER STYLING                        */
+    /* -------------------------------------- */
+
+    .st-key-my_blue_container {
+    background-color: rgb(255, 255, 255); /* Blue with some transparency */
+    padding: 20px; /* Add some padding for better visual */
+    border: 1px solid var(--slate-grey);
+    border-radius: 10px; /* Optional: round corners */
+    }
+
+    /* -------------------------------------- */
+    /* SIDEBAR STYLING                        */
+    /* -------------------------------------- */
+    [data-testid="stSidebar"] {
+        background-color: var(--bg-sidebar);
+        border-right: 1px solid rgba(255,255,255,0.1);
+    }
     
-    /* Metric cards */
+    [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3, 
+    [data-testid="stSidebar"] p, [data-testid="stSidebar"] span, [data-testid="stSidebar"] label {
+        color: var(--text-sidebar) !important;
+    }
+
+    /* SIDEBAR BUTTON ALIGNMENT FIX */
+    [data-testid="stSidebar"] .stButton button {
+        background-color: transparent !important;
+        border: 1px solid transparent !important;
+        
+        /* Force Flexbox on the button container */
+        display: flex !important;
+        justify-content: flex-start !important; /* Align content to the left */
+        align-items: center !important;
+        width: 100% !important;
+        padding-left: 1rem !important; 
+    }
+
+    /* FIX FOR NATIVE ICONS: Target the internal wrapper div */
+    [data-testid="stSidebar"] .stButton button > div {
+        display: flex !important;
+        justify-content: flex-start !important; /* Force internal wrapper to left */
+        width: 100% !important;
+    }
+
+    /* Text styling inside the button */
+    [data-testid="stSidebar"] .stButton button p {
+        color: var(--text-sidebar) !important;
+        text-align: left !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        line-height: 1.2;
+        flex-grow: 1 !important; /* Ensures text takes up space if needed */
+    }
+
+    /* Hover Effects */
+    [data-testid="stSidebar"] .stButton button:hover {
+        background-color: rgba(255,255,255,0.1) !important;
+        border: 1px solid rgba(255,255,255,0.5) !important;
+    }
+    
+    /* Component Styling */
     .metric-card {
-        background: #1e293b;
-        border: 1px solid #334155;
-        border-radius: 8px;
+        background: var(--bg-card);
+        border: 1px solid var(--border-strong);
+        border-radius: 6px;
         padding: 1.25rem;
         text-align: center;
         margin: 0.5rem 0;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
     }
-    
     .metric-label {
         font-size: 0.75rem;
-        color: #94a3b8;
+        color: var(--slate-grey) !important;
         margin-bottom: 0.5rem;
         text-transform: uppercase;
-        letter-spacing: 0.05em;
         font-weight: 600;
     }
-    
     .metric-value {
         font-size: 1.5rem;
         font-weight: 700;
-        color: #f8fafc;
+        color: var(--slate-grey) !important;
         font-family: 'Roboto Mono', monospace;
     }
-    
-    .status-success { color: #10b981; }
-    .status-error { color: #ef4444; }
-    .status-running { color: #3b82f6; }
-    
-    /* Message boxes */
-    .message-box {
-        padding: 1rem 1.25rem;
-        border-radius: 6px;
-        margin: 1rem 0;
-        border-left: 4px solid;
-        background: #1e293b;
-        color: #f8fafc;
-        font-size: 0.95rem;
-    }
-    
-    .message-success { border-color: #10b981; }
-    .message-error { border-color: #ef4444; }
-    .message-info { border-color: #3b82f6; }
-    
-    /* Dashboard output card */
     .dashboard-card {
-        background: #1e293b;
-        border: 1px solid #334155;
-        border-radius: 8px;
-        padding: 1.5rem;
-        color: #f8fafc;
-        margin: 1rem 0;
-    }
-    
-    .dashboard-title {
-        font-size: 1.25rem;
-        font-weight: 600;
-        margin-bottom: 1.5rem;
-        text-align: center;
-        color: #f8fafc;
-    }
-    
-    .dashboard-item {
-        background: #0f172a;
-        border: 1px solid #334155;
+        background: var(--bg-card);
+        border: 1px solid var(--border-strong);
         border-radius: 6px;
+        padding: 1.5rem;
+        color: var(--slate-grey) !important;
+        margin: 1rem 0;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    }
+    .dashboard-item {
+        background: rgb(244, 244, 244);
+        border: 1px solid var(--border-strong);
+        border-radius: 4px;
         padding: 1rem;
         text-align: center;
         margin: 0.5rem;
+        color: var(--slate-grey) !important;
     }
     
-    .dashboard-label {
-        font-size: 0.7rem;
-        color: #94a3b8;
-        margin-bottom: 0.5rem;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        font-weight: 600;
+    /* --- HEADER & SIDEBAR FIXES --- */
+    header[data-testid="stHeader"] {
+        background-color: transparent !important;
     }
-    
-    .dashboard-value {
-        font-size: 0.95rem;
-        font-weight: 500;
-        word-break: break-all;
-        color: #f8fafc;
+    [data-testid="stDecoration"] {
+        display: none;
     }
-    
-    .dashboard-link {
-        display: inline-block;
-        background: #334155;
-        color: #f8fafc;
-        text-decoration: none;
-        padding: 0.5rem 1.5rem;
-        border-radius: 4px;
-        font-size: 0.9rem;
-        font-weight: 500;
-        transition: all 0.2s;
-    }
-    
-    .dashboard-link:hover {
-        background: #475569;
-    }
-    
-    /* Tabs styling */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 1.5rem;
-        background: transparent;
-        border-bottom: 1px solid #334155;
-        padding: 0.5rem 0 0 0;
-    }
-    
-    .stTabs [data-baseweb="tab"] {
-        padding: 0.75rem 0;
-        font-weight: 500;
-        color: #94a3b8;
-        font-size: 1rem;
-    }
-    
-    .stTabs [aria-selected="true"] {
-        color: #3b82f6;
-        border-bottom: 2px solid #3b82f6;
-    }
-    
-    /* Expander */
-    .stExpander {
-        background: #1e293b;
-        border: 1px solid #334155;
-        border-radius: 6px;
-    }
-    
-    .streamlit-expanderHeader {
-        background: transparent;
-        color: #f8fafc !important;
-        font-size: 0.95rem;
-    }
-    
-    /* Code/File content */
-    .file-content {
-        background: #0f172a;
-        border: 1px solid #334155;
-        border-radius: 6px;
-        padding: 1rem;
-        color: #e2e8f0;
-        font-family: 'Roboto Mono', monospace;
-        font-size: 0.85rem;
-    }
-    
-    /* Global Cleanups */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
-    .block-container { 
-        padding-top: 0rem !important;
-        padding-bottom: 0rem !important;
-    }
-    
-    /* Remove top margin from first element */
-    .block-container > div:first-child {
-        margin-top: 0 !important;
-        padding-top: 0 !important;
-    }
-    
-    /* Hide sidebar toggle button */
-    [data-testid="collapsedControl"] {
-        display: none !important;
-    }
-    
-    button[kind="header"] {
-        display: none !important;
-    }
-    
-    section[data-testid="stSidebar"] > div > button {
-        display: none !important;
-    }
-    
     [data-testid="stSidebarCollapsedControl"] {
-        display: none !important;
+        visibility: visible !important;
+        display: block !important;
+        color: var(--slate-grey) !important; 
     }
-    
-    /* Text Input */
-    .stTextInput > div > div > input {
-        background: #1e293b;
-        color: #f8fafc;
-        border: 1px solid #475569;
-        border-radius: 6px;
+    #MainMenu {
+        visibility: hidden;
     }
-    
-    .stTextInput > div > div > input:focus {
-        border-color: #3b82f6;
-        box-shadow: 0 0 0 1px #3b82f6;
+    footer {
+        visibility: hidden;
     }
-    
-    /* Coming Soon Screen */
-    .coming-soon-screen {
-        text-align: center;
-        padding: 4rem 2rem;
-        max-width: 600px;
-        margin: 2rem auto;
-        background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-        border: 2px solid #334155;
-        border-radius: 16px;
-    }
-    
-    .coming-soon-title {
-        font-size: 2rem;
-        font-weight: 700;
-        color: #f8fafc;
-        margin-bottom: 1rem;
-    }
-    
-    .coming-soon-text {
-        font-size: 1.1rem;
-        color: #94a3b8;
-        line-height: 1.6;
-    }
-    
-    .coming-soon-badge {
-        display: inline-block;
-        background: linear-gradient(135deg, #f59e0b, #d97706);
-        color: white;
-        padding: 0.5rem 1rem;
-        border-radius: 6px;
-        font-size: 0.85rem;
-        font-weight: 600;
-        margin-top: 1rem;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
+    .block-container {
+        padding-top: 3rem !important; 
+        padding-bottom: 5rem !important; 
     }
 
-    /* ------------------------------------------------ */
-    /* FIXED: Sidebar Footer Container                  */
-    /* ------------------------------------------------ */
-    .genie-widget-container {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        width: 21rem;
-        padding: 1rem;
-        z-index: 99999;
-        background-color: #0f172a;
-        border-top: 1px solid #334155;
-        display: flex;       /* Use Flexbox */
-        flex-direction: column; /* Stack buttons vertically */
-        gap: 0.5rem;         /* Gap between buttons */
-    }
+    /* -------------------------------------- */
+    /* CUSTOM ICONS: STRICT CENTERED ALIGNMENT */
+    /* -------------------------------------- */
 
-    /* Force buttons to full width */
-    .genie-widget-container .stButton {
+    /* 1. Target the Button: Force Flexbox Centering */
+    .st-key-select_thoughtspot .stButton > button {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        justify-content: center !important; /* Packs items to the center */
+        gap: 8px !important;                /* Space between Icon and Text */
+        
+        /* Reset padding so it doesn't push items around */
+        padding: 0.5rem 1rem !important;
         width: 100% !important;
+    }
+
+    /* 2. The Icon (Pseudo-element) */
+    .st-key-select_thoughtspot .stButton > button::before {
+        content: "";
+        display: block !important;
+        width: 18px;      /* Icon Width */
+        height: 18px;     /* Icon Height */
+        flex-shrink: 0;   /* Prevent icon from squishing */
+        
+        /* Color Logic: Inherit text color */
+        background-color: currentColor !important; 
+        
+        /* Masking Logic */
+        -webkit-mask: url('https://cdn.brandfetch.io/idlcYXlhbB/theme/dark/symbol.svg?c=1bxid64Mup7aczewSAYMX&t=1668517488874') no-repeat center;
+        mask: url('https://cdn.brandfetch.io/idlcYXlhbB/theme/dark/symbol.svg?c=1bxid64Mup7aczewSAYMX&t=1668517488874') no-repeat center;
+        -webkit-mask-size: contain;
+        mask-size: contain;
+    }
+
+    /* 3. The Text: KILL all expansion */
+    .st-key-select_thoughtspot .stButton > button p {
+        flex: 0 0 auto !important; /* Don't grow, don't shrink, auto width */
+        width: auto !important;    /* Only take up space of the text itself */
         margin: 0 !important;
+        padding: 0 !important;
+        line-height: 1 !important;
     }
 
-    .genie-widget-container .stButton > button {
-        width: 100% !important;
-        border-radius: 6px;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        
-        /* Your Genie styling */
-        background: linear-gradient(to right, #1e293b, #0f172a);
-        border: 1px solid #60a5fa; 
-        color: #e2e8f0;
-        border-radius: 4px; /* Matches standard Streamlit button radius */
-        
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-        transition: all 0.2s ease;
-    }
-
-    /* Hover effect */
-    .genie-widget-container .stButton > button:hover {
-        border-color: #93c5fd;
-        background: linear-gradient(to right, #334155, #1e293b);
-        transform: translateY(-1px);
-    }
-    
-    /* ------------------------------------------------ */
-    /* NEW: External Icon for Genie Button              */
-    /* ------------------------------------------------ */
-    
-    /* 1. Target the button inside the genie widget container */
-    .genie-widget-container .stButton > button {
+    /* 4. Internal Div Wrapper (Streamlit sometimes adds this) */
+    .st-key-select_thoughtspot .stButton > button > div {
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
-        gap: 12px !important; /* Increased gap for better spacing */
+        width: auto !important; /* Stop wrapper from filling the button */
+        flex: 0 0 auto !important;
+    }
+    
+    /* 1. Target the Button: Force Flexbox Centering */
+    .st-key-select_powerbi .stButton > button {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        justify-content: center !important; /* Packs items to the center */
+        gap: 8px !important;                /* Space between Icon and Text */
+        
+        /* Reset padding so it doesn't push items around */
+        padding: 0.5rem 1rem !important;
+        width: 100% !important;
     }
 
-    /* 2. Inject the icon using a pseudo-element */
-    .genie-widget-container .stButton > button::before {
+    /* 2. The Icon (Pseudo-element) */
+    .st-key-select_powerbi .stButton > button::before {
         content: "";
-        display: inline-block;
-        width: 1.2rem;
-        height: 1.2rem;
+        display: block !important;
+        width: 18px;      /* Icon Width */
+        height: 18px;     /* Icon Height */
+        flex-shrink: 0;   /* Prevent icon from squishing */
         
-        /* FORCE WHITE COLOR explicitly instead of currentColor */
-        background-color: #f8fafc !important; 
+        /* Color Logic: Inherit text color */
+        background-color: currentColor !important; 
         
-        /* WEB & STANDARD MASKS */
-        -webkit-mask: url('https://cdn.jsdelivr.net/npm/heroicons@2.0.18/24/outline/sparkles.svg') no-repeat center;
-        mask: url('https://cdn.jsdelivr.net/npm/heroicons@2.0.18/24/outline/sparkles.svg') no-repeat center;
-        
+        /* Masking Logic */
+        -webkit-mask: url('https://img.icons8.com/?size=100&id=03aYi0fY0D9X&format=png&color=000000') no-repeat center;
+        mask: url('https://img.icons8.com/?size=100&id=03aYi0fY0D9X&format=png&color=000000') no-repeat center;
         -webkit-mask-size: contain;
         mask-size: contain;
-        
-        /* Ensure it renders on top */
-        z-index: 1;
     }
+
+    /* 3. The Text: KILL all expansion */
+    .st-key-select_powerbi .stButton > button p {
+        flex: 0 0 auto !important; /* Don't grow, don't shrink, auto width */
+        width: auto !important;    /* Only take up space of the text itself */
+        margin: 0 !important;
+        padding: 0 !important;
+        line-height: 1 !important;
+    }
+
+    /* 4. Internal Div Wrapper (Streamlit sometimes adds this) */
+    .st-key-select_powerbi .stButton > button > div {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        width: auto !important; /* Stop wrapper from filling the button */
+        flex: 0 0 auto !important;
+    }
+
+    /* 1. Target the Button: Force Flexbox Centering */
+    .st-key-select_tableau .stButton > button {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        justify-content: center !important; /* Packs items to the center */
+        gap: 8px !important;                /* Space between Icon and Text */
+        
+        /* Reset padding so it doesn't push items around */
+        padding: 0.5rem 1rem !important;
+        width: 100% !important;
+    }
+
+    /* 2. The Icon (Pseudo-element) */
+    .st-key-select_tableau .stButton > button::before {
+        content: "";
+        display: block !important;
+        width: 18px;      /* Icon Width */
+        height: 18px;     /* Icon Height */
+        flex-shrink: 0;   /* Prevent icon from squishing */
+        
+        /* Color Logic: Inherit text color */
+        background-color: currentColor !important; 
+        
+        /* Masking Logic */
+        -webkit-mask: url('https://cdn.worldvectorlogo.com/logos/tableau-software.svg') no-repeat center;
+        mask: url('https://cdn.worldvectorlogo.com/logos/tableau-software.svg') no-repeat center;
+        -webkit-mask-size: contain;
+        mask-size: contain;
+    }
+
+    /* 3. The Text: KILL all expansion */
+    .st-key-select_tableau .stButton > button p {
+        flex: 0 0 auto !important; /* Don't grow, don't shrink, auto width */
+        width: auto !important;    /* Only take up space of the text itself */
+        margin: 0 !important;
+        padding: 0 !important;
+        line-height: 1 !important;
+    }
+
+    /* 4. Internal Div Wrapper (Streamlit sometimes adds this) */
+    .st-key-select_tableau .stButton > button > div {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        width: auto !important; /* Stop wrapper from filling the button */
+        flex: 0 0 auto !important;
+    }
+
+    /* -------------------------------------- */
+    /* TEST CONNECTION BUTTON STYLING         */
+    /* -------------------------------------- */
+    
+    /* Target the button by its unique key */
+    .st-key-global_test_conn .stButton > button {
+        background-color: rgb(51, 65, 85) !important; /* Slate Grey Background */
+        color: rgb(255, 255, 255) !important;         /* White Text */
+        border: 1px solid rgb(51, 65, 85) !important; /* Matching Border */
+        transition: none !important;                  /* Remove transition for consistent look */
+    }
+
+    /* Enforce specific styling for Text inside the button */
+    .st-key-global_test_conn .stButton > button p {
+        color: rgb(255, 255, 255) !important;
+    }
+
+    /* Force the same style on Hover */
+    .st-key-global_test_conn .stButton > button:hover {
+        background-color: rgb(51, 65, 85) !important;
+        color: rgb(255, 255, 255) !important;
+        border-color: rgb(51, 65, 85) !important;
+        box-shadow: none !important; /* Optional: removes default Streamlit hover glow */
+    }
+
+    /* Force the same style on Active/Focus/Selected states */
+    .st-key-global_test_conn .stButton > button:active,
+    .st-key-global_test_conn .stButton > button:focus,
+    .st-key-global_test_conn .stButton > button:focus-visible {
+        background-color: rgb(51, 65, 85) !important;
+        color: rgb(255, 255, 255) !important;
+        border-color: rgb(51, 65, 85) !important;
+        outline: none !important;
+    }
+
+    .st-emotion-cache-1c7y2q2 { /* This is the specific class for the st.info box in a typical version */
+    background-color: #FFC0CB; /* Pink background */
+    color: #800080; /* Purple text color */
+    border-radius: 15px; /* Rounded corners */
+    padding: 20px; /* Internal spacing */
+    font-size: 18px; /* Larger font */
+    }
+
+    /* Change the background color of the expander header */
+    .streamlit-expanderHeader {
+        background-color: #FF5733; /* Your desired color */
+        color: white; /* Text color for better contrast */
+    }
+
+    /* Target the specific download button container */
+	.download-report-container .stDownloadButton button {
+		background-color: rgb(232, 234, 242) !important;
+		color: rgb(51, 65, 85) !important;
+		border: 1px solid rgb(51, 65, 85) !important;
+		font-weight: 500 !important;
+	}
+	
+	/* Hover State for the download button */
+	.download-report-container .stDownloadButton button:hover {
+		background-color: rgb(51, 65, 85) !important; /* Swapping colors on hover for UX */
+		color: rgb(255, 255, 255) !important;
+		border-color: rgb(51, 65, 85) !important;
+	}
+	
+	/* Ensure the text/icon inside the button follows the color rule */
+	.download-report-container .stDownloadButton button p {
+		color: rgb(51, 65, 85) !important;
+	}
+	
+	.download-report-container .stDownloadButton button:hover p {
+		color: rgb(255, 255, 255) !important;
+	}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -1176,10 +1187,154 @@ def render_validator_section():
         
         # Download Button
         pdf_bytes = generate_report_pdf(report['executive_summary'], report['detailed_analysis'], report['session_id'])
+        # Wrap the button in a div with a custom class/id
+        st.markdown('<div class="download-report-container">', unsafe_allow_html=True)
         st.download_button(
             label="📥 Download PDF Report",
             data=pdf_bytes,
             file_name="Migration_Report.pdf",
+            mime="application/pdf",
+            use_container_width=True
+        )
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        with st.expander("Executive Summary", expanded=True):
+            st.markdown(report['executive_summary'])
+        with st.expander("Detailed Findings"):
+            st.markdown(report['detailed_analysis'])
+
+def render_thoughtspot_validator_section():
+    """
+    Renders the Validator UI logic specifically for ThoughtSpot.
+    """
+    
+    # --- REQUIREMENT: Model Information ---
+    st.info("⚡ **Model:** Databricks Claude Opus")
+    st.caption("Automated Visual Regression Testing: ThoughtSpot vs Databricks")
+    
+    # --- CONFIGURATION ---
+    config = load_config()
+    
+    # ThoughtSpot Specific Credentials
+    TS_BASE_URL = config.get("thoughtspot_url", "https://my-thoughtspot-instance.com")
+    TS_USERNAME = os.getenv("TS_CLIENT_USERNAME")
+    TS_PASSWORD = os.getenv("TS_CLIENT_PWD")
+    
+    # Databricks Config for writing metadata
+    DB_HOST = normalize_host_url(config.get("databricks_host", ""))
+    DB_TOKEN = os.getenv("DATABRICKS_TOKEN")
+    WAREHOUSE_ID = config.get("warehouse_id", "")
+    METADATA_TABLE = "dbx_migration_poc.migrationvalidation.thoughtspot_pdf_exports_metadata"
+
+    ENDPOINT_OPUS = config.get("endpoint_opus", "https://adb-3666479212731434.14.azuredatabricks.net/serving-endpoints/databricks-claude-opus-4-6/invocations")
+    ENDPOINT_HAIKU = config.get("endpoint_haiku", "https://adb-3666479212731434.14.azuredatabricks.net/serving-endpoints/databricks-claude-haiku-4-5/invocations")
+
+    col_export, col_validate = st.columns(2)
+
+    # --- COLUMN 1: EXPORT ---
+    with col_export:
+        st.markdown("### 1. Source Snapshot")
+        ts_url = st.text_input("Liveboard URL", placeholder="https://thoughtspot.com/#/pinboard/...", key="ts_val_input_url")
+        
+        if st.button("🚀 Start Export", type="primary", use_container_width=True, key="ts_val_export_btn"):
+            
+            # --- SAFETY CHECK FOR MODULE ---
+            if ThoughtSpotPDFExport is None:
+                st.error("The 'ThoughtSpotPDFExport' module failed to load. Check imports/logs.")
+            elif not ts_url:
+                st.warning("Please provide a Liveboard URL.")
+            elif not all([TS_USERNAME, TS_PASSWORD]):
+                st.error("ThoughtSpot credentials (TS_USERNAME, TS_PASSWORD) missing in environment.")
+            else:
+                with st.spinner("Snapshotting Liveboard..."):
+                    try:
+                        # 1. Run Export (Returns Dict, no longer uses PySpark internally)
+                        result = ThoughtSpotPDFExport.export_from_url(ts_url, TS_USERNAME, TS_PASSWORD)
+                        
+                        # 2. Persist Metadata using App's SQL Helper
+                        if result:
+                            try:
+                                # Convert dict to single-row DataFrame
+                                df_log = pd.DataFrame([result])
+                                # Use existing app helper to write to Unity Catalog via API
+                                write_table_data_sql(DB_HOST, DB_TOKEN, WAREHOUSE_ID, METADATA_TABLE, df_log)
+                            except Exception as db_e:
+                                st.warning(f"Export succeeded, but failed to log to DB: {db_e}")
+
+                        # 3. Handle UI
+                        if result.get("export_status") == "success":
+                            st.session_state['ts_export_result'] = result
+                            st.success("Export Complete!")
+                        else:
+                            st.error(f"Error: {result.get('error')}")
+                    
+                    except Exception as e:
+                        st.error(f"Critical: {str(e)}")
+
+        if 'ts_export_result' in st.session_state:
+            res = st.session_state['ts_export_result']
+            st.markdown(f"""
+            <div style="margin-top: 10px; padding: 10px; border: 1px solid #334155; border-radius: 5px; background: #1e293b;">
+                <div style="font-size: 0.8em; color: #94a3b8;">READY FOR ANALYSIS</div>
+                <div style="color: #f8fafc;">📄 {res.get('filename', 'export.pdf')}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    # --- COLUMN 2: VALIDATE ---
+    with col_validate:
+        st.markdown("### 2. AI Validation")
+        
+        if 'ts_export_result' not in st.session_state:
+            st.info("👈 Complete Step 1 first.")
+        else:
+            source_path = st.session_state['ts_export_result']['file_path']
+            session_id = st.session_state['ts_export_result'].get('session_id', str(uuid.uuid4()))
+            
+            target_pdf = st.file_uploader("Upload Databricks PDF", type=["pdf"], key="ts_val_upload")
+            
+            if st.button("🤖 Run Comparison", type="primary", use_container_width=True, key="ts_val_run_btn"):
+                if not target_pdf:
+                    st.warning("Upload target PDF.")
+                else:
+                    os.makedirs("exports", exist_ok=True)
+                    target_path = os.path.join("exports", f"ts_target_{session_id}.pdf")
+                    with open(target_path, "wb") as f: f.write(target_pdf.getbuffer())
+                    
+                    try:
+                        with st.spinner("Analyzing pixels & data..."):
+                            # 1. Encode
+                            source_b64 = vision_engine.encode_pdf_to_base64(source_path)
+                            target_b64 = vision_engine.encode_pdf_to_base64(target_path)
+                            
+                            # 2. Vision Analysis
+                            s1 = vision_engine.run_stage1_analysis(source_b64, target_b64, ENDPOINT_OPUS, DB_TOKEN, "ThoughtSpot", "Claude Opus")
+                            if s1["status"] == "error": raise Exception(s1["error"])
+                            
+                            # 3. Summarization
+                            s2 = vision_engine.run_stage2_summarization(s1["detailed_analysis"], ENDPOINT_HAIKU, DB_TOKEN, "Claude Haiku")
+                            
+                            final_result = {
+                                "session_id": session_id,
+                                "detailed_analysis": s1["detailed_analysis"],
+                                "executive_summary": s2["summary"]
+                            }
+                            st.session_state['ts_current_report'] = final_result
+                            st.success("Validation Complete!")
+                    except Exception as e:
+                        st.error(f"Validation Failed: {str(e)}")
+
+    st.markdown("---")
+
+    # --- REPORTING SECTION ---
+    if 'ts_current_report' in st.session_state:
+        report = st.session_state['ts_current_report']
+        st.markdown("### 📊 Analysis Report")
+        
+        pdf_bytes = generate_report_pdf(report['executive_summary'], report['detailed_analysis'], report['session_id'])
+        st.download_button(
+            label="📥 Download PDF Report",
+            data=pdf_bytes,
+            file_name=f"TS_Migration_Report_{report['session_id'][:8]}.pdf",
             mime="application/pdf",
             use_container_width=True
         )
@@ -1188,6 +1343,7 @@ def render_validator_section():
             st.markdown(report['executive_summary'])
         with st.expander("Detailed Findings"):
             st.markdown(report['detailed_analysis'])
+
 
 # The Modal Dialog Function for Genie (unchanged)
 @st.dialog("✨ Genie Assistant", width="large")
@@ -1292,9 +1448,13 @@ header_col1, header_col2 = st.columns([6, 1])
 
 with header_col1:
     st.markdown("""
-    <div style="text-align: center; padding: 0.5rem 0 0.25rem 0; margin-top: 0;">
-        <div style="font-size: 1.75rem; font-weight: 700; color: #f8fafc; letter-spacing: 1px;">BrickShift</div>
-        <div style="font-size: 0.85rem; color: #94a3b8; margin-top: 0.15rem;">Multi-Platform Dashboard Migration to Databricks AI/BI</div>
+    <div style="text-align: left; padding: 1rem 0.5rem; border-bottom: 1px solid rgb(213, 216, 220); margin-bottom: 1rem;">
+        <div style="font-family: 'Roboto', sans-serif; font-size: 2rem; font-weight: 700; color: rgb(33, 33, 33); letter-spacing: -0.5px; display: flex; align-items: center; gap: 10px;">
+            <span style="color: rgb(51, 65, 85);">BrickShift</span>
+        </div>
+        <div style="font-family: 'Roboto', sans-serif; font-size: 0.9rem; color: rgb(129, 129, 129); margin-top: 0.25rem;">
+            Intelligent Dashboard Migration to Databricks AI/BI
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -1319,7 +1479,9 @@ with header_col2:
 # Panel selection buttons with active state styling
 col1, col2, col3 = st.columns(3)
 
+# The CSS handles the visual requirements based on these types
 with col1:
+    # If selected, make it primary (Slate/White). If not, secondary (LightGrey/Slate)
     ts_button_type = "primary" if st.session_state.main_panel == 'thoughtspot' else "secondary"
     if st.button("ThoughtSpot", key="select_thoughtspot", type=ts_button_type, use_container_width=True):
         st.session_state.main_panel = 'thoughtspot'
@@ -1355,33 +1517,33 @@ with st.sidebar:
     # ---------------------------------------
     if st.session_state.main_panel == 'thoughtspot':
         st.markdown("### ThoughtSpot Migration")
-        if st.button("Conversion", key="ts_tab_conversion", use_container_width=True):
+        if st.button("Conversion", key="ts_tab_conversion", use_container_width=True,icon=":material/conversion_path:",icon_position="left"):
             st.session_state.ts_active_tab = 'conversion'
-        if st.button("Config Manager", key="ts_tab_config", use_container_width=True):
+        if st.button("Config Manager", key="ts_tab_config", use_container_width=True,icon=":material/settings:",icon_position="left"):
             st.session_state.ts_active_tab = 'config'
-        if st.button("History", key="ts_tab_history", use_container_width=True):
+        if st.button("History", key="ts_tab_history", use_container_width=True,icon=":material/history:",icon_position="left"):
             st.session_state.ts_active_tab = 'history'
-        if st.button("Discovery Details", key="ts_tab_discovery", use_container_width=True):
+        if st.button("Discovery Details", key="ts_tab_discovery", use_container_width=True,icon=":material/radar:",icon_position="left"):
             st.session_state.ts_active_tab = 'discovery'
     
     elif st.session_state.main_panel == 'powerbi':
         st.markdown("### Power BI Migration")
-        if st.button("Conversion", key="pbi_tab_conversion", use_container_width=True):
+        if st.button("Conversion", key="pbi_tab_conversion", use_container_width=True,icon=":material/conversion_path:",icon_position="left"):
             st.session_state.pbi_active_tab = 'conversion'
-        if st.button("Config Manager", key="pbi_tab_config", use_container_width=True):
+        if st.button("Config Manager", key="pbi_tab_config", use_container_width=True,icon=":material/settings:",icon_position="left"):
             st.session_state.pbi_active_tab = 'config'
-        if st.button("History", key="pbi_tab_history", use_container_width=True):
+        if st.button("History", key="pbi_tab_history", use_container_width=True,icon=":material/history:",icon_position="left"):
             st.session_state.pbi_active_tab = 'history'
-        if st.button("Discovery Details", key="pbi_tab_discovery", use_container_width=True):
+        if st.button("Discovery Details", key="pbi_tab_discovery", use_container_width=True,icon=":material/radar:",icon_position="left"):
             st.session_state.pbi_active_tab = 'discovery'
 
     elif st.session_state.main_panel == 'tableau':
         st.markdown("### Tableau Migration")
-        if st.button("Conversion", key="tableau_tab_conversion", use_container_width=True):
+        if st.button("Conversion", key="tableau_tab_conversion", use_container_width=True,icon=":material/conversion_path:",icon_position="left"):
             st.session_state.tableau_active_tab = 'conversion'
-        if st.button("Config Manager", key="tableau_tab_config", use_container_width=True):
+        if st.button("Config Manager", key="tableau_tab_config", use_container_width=True,icon=":material/settings:",icon_position="left"):
             st.session_state.tableau_active_tab = 'config'
-        if st.button("History", key="tableau_tab_history", use_container_width=True):
+        if st.button("History", key="tableau_tab_history", use_container_width=True,icon=":material/history:",icon_position="left"):
             st.session_state.tableau_active_tab = 'history'
 
     # ---------------------------------------
@@ -1405,7 +1567,7 @@ with st.sidebar:
     st.markdown('<div class="genie-widget-container">', unsafe_allow_html=True)
     
     # BUTTON 1: GENIE
-    if st.button("✨ Ask Genie", key="genie_trigger_btn", type="secondary", use_container_width=True):
+    if st.button("Ask Genie", key="genie_trigger_btn", type="secondary", use_container_width=True,icon=":material/smart_toy:"):
         open_genie_chat()
 
     # NOTE: VALIDATOR BUTTON REMOVED FROM HERE as requested
@@ -1419,11 +1581,13 @@ if st.session_state.main_panel == 'thoughtspot':
     
     # CONVERSION TAB
     if st.session_state.ts_active_tab == 'conversion':
-        st.markdown('<h1 style="color: white; text-align: center; margin: 0; padding: 0.5rem 0;">ThoughtSpot to Databricks</h1>', unsafe_allow_html=True)
-        st.markdown('<p style="color: rgba(255,255,255,0.9); text-align: center; margin: 0 0 1.5rem 0; font-size: 0.95rem;">Dashboard Migration</p>', unsafe_allow_html=True)
+        with st.container(key="my_blue_container"):
+            st.markdown('<h1 style="color: rgb(51, 65, 85); text-align: left; margin: 0; padding: 0.5rem 0;">ThoughtSpot to Databricks</h1>', unsafe_allow_html=True)
+            st.markdown('<p style="color: rgb(51, 65, 85); text-align: left; margin: 0 0 1.5rem 0; font-size: 0.95rem;">Dashboard Migration</p>', unsafe_allow_html=True)
         
         # UPDATED: Added Validator Tab
-        conversion_tab1, conversion_tab2, conversion_tab3 = st.tabs(["Data Conversion", "Visual Conversion", "Migration Validator"])
+            conversion_tab1, conversion_tab2, conversion_tab3 = st.tabs(["Data Conversion", "Visual Conversion", "Migration Validator"])
+            #conversion_tab1, conversion_tab2, conversion_tab3 = stx.tab_bar(data=[stx.TabBarItemData(id=1, title="Data Conversion", description="Tasks to take care of"),stx.TabBarItemData(id=2, title="Visual Conversion", description="Tasks taken care of"),stx.TabBarItemData(id=3, title="Migration Validator", description="Tasks missed out"),],default=1)
         
         # DATA CONVERSION TAB
         with conversion_tab1:
@@ -1450,11 +1614,15 @@ if st.session_state.main_panel == 'thoughtspot':
                     
         # VALIDATOR TAB (Placeholder)
         with conversion_tab3:
-            st.markdown('<div class="coming-soon-screen"><div class="coming-soon-title">ThoughtSpot Validator</div><div class="coming-soon-text">Visual regression testing and automated validation for ThoughtSpot migrations is currently under development.</div><div class="coming-soon-badge">Coming Soon</div></div>', unsafe_allow_html=True)
+            # Removed the "Coming Soon" placeholder
+            st.markdown('<p style="margin: 1rem 0;">Validate migration accuracy using Databricks AI</p>', unsafe_allow_html=True)
+            
+            # Call the new ThoughtSpot Validator function
+            render_thoughtspot_validator_section()
                 
     # CONFIG MANAGER TAB
     elif st.session_state.ts_active_tab == 'config':
-        st.markdown('<h1 style="color: white;">ThoughtSpot Config Manager</h1>', unsafe_allow_html=True)
+        st.markdown('<h1 style="color: rgb(51, 65, 85);">ThoughtSpot Config Manager</h1>', unsafe_allow_html=True)
         st.markdown('<p>View and manage configuration tables</p>', unsafe_allow_html=True)
         
         if not warehouse_id:
@@ -1610,7 +1778,7 @@ if st.session_state.main_panel == 'thoughtspot':
     
     # HISTORY TAB
     elif st.session_state.ts_active_tab == 'history':
-        st.markdown('<h1 style="color: white;">ThoughtSpot Conversion History</h1>', unsafe_allow_html=True)
+        st.markdown('<h1 style="color: rgb(51, 65, 85);">ThoughtSpot Conversion History</h1>', unsafe_allow_html=True)
         st.markdown('<p>View past dashboard conversions from this session</p>', unsafe_allow_html=True)
         
         ts_history = [h for h in st.session_state.run_history if h.get('source') == 'thoughtspot']
@@ -1623,7 +1791,7 @@ if st.session_state.main_panel == 'thoughtspot':
     
     # DISCOVERY TAB
     elif st.session_state.ts_active_tab == 'discovery':
-        st.markdown('<h1 style="color: white;">ThoughtSpot Discovery Details</h1>', unsafe_allow_html=True)
+        st.markdown('<h1 style="color: rgb(51, 65, 85);">ThoughtSpot Discovery Details</h1>', unsafe_allow_html=True)
         st.markdown('<p>Analyze dependencies and complexity scores</p>', unsafe_allow_html=True)
 
         if not warehouse_id:
@@ -1952,11 +2120,12 @@ elif st.session_state.main_panel == 'powerbi':
     
     # CONVERSION TAB
     if st.session_state.pbi_active_tab == 'conversion':
-        st.markdown('<h1 style="color: white; text-align: center; margin: 0; padding: 0.5rem 0;">Power BI to Databricks</h1>', unsafe_allow_html=True)
-        st.markdown('<p style="color: rgba(255,255,255,0.9); text-align: center; margin: 0 0 1.5rem 0; font-size: 0.95rem;">Dashboard Migration</p>', unsafe_allow_html=True)
+        with st.container(key="my_blue_container"):
+            st.markdown('<h1 style="color: rgb(51, 65, 85); text-align: left; margin: 0; padding: 0.5rem 0;">Power BI to Databricks</h1>', unsafe_allow_html=True)
+            st.markdown('<p style="color: rgb(51, 65, 85); text-align: left; margin: 0 0 1.5rem 0; font-size: 0.95rem;">Dashboard Migration</p>', unsafe_allow_html=True)
         
         # New Tab structure for PBI (Includes Validator)
-        pbi_conv_tab1, pbi_conv_tab2, pbi_conv_tab3 = st.tabs(["Data Conversion", "Visual Conversion", "Migration Validator"])
+            pbi_conv_tab1, pbi_conv_tab2, pbi_conv_tab3 = st.tabs(["Data Conversion", "Visual Conversion", "Migration Validator"])
 
         # PBI DATA CONVERSION
         with pbi_conv_tab1:
@@ -1988,7 +2157,7 @@ elif st.session_state.main_panel == 'powerbi':
 
     # CONFIG MANAGER TAB
     elif st.session_state.pbi_active_tab == 'config':
-        st.markdown('<h1 style="color: white;">Power BI Config Manager</h1>', unsafe_allow_html=True)
+        st.markdown('<h1 style="color: rgb(51, 65, 85);">Power BI Config Manager</h1>', unsafe_allow_html=True)
         st.markdown('<p>View and manage configuration tables</p>', unsafe_allow_html=True)
         
         if not warehouse_id:
@@ -2044,7 +2213,7 @@ elif st.session_state.main_panel == 'powerbi':
 
     # HISTORY TAB
     elif st.session_state.pbi_active_tab == 'history':
-        st.markdown('<h1 style="color: white;">Power BI Conversion History</h1>', unsafe_allow_html=True)
+        st.markdown('<h1 style="color: rgb(51, 65, 85);">Power BI Conversion History</h1>', unsafe_allow_html=True)
         st.markdown('<p>View past dashboard conversions from this session</p>', unsafe_allow_html=True)
         
         pbi_history = [h for h in st.session_state.run_history if h.get('source') == 'powerbi']
@@ -2057,7 +2226,7 @@ elif st.session_state.main_panel == 'powerbi':
     
     # DISCOVERY TAB
     elif st.session_state.pbi_active_tab == 'discovery':
-        st.markdown('<h1 style="color: white;">Power BI Discovery Details</h1>', unsafe_allow_html=True)
+        st.markdown('<h1 style="color: rgb(51, 65, 85);">Power BI Discovery Details</h1>', unsafe_allow_html=True)
         st.markdown('<p>Analyze report complexity and visual details</p>', unsafe_allow_html=True)
 
         if not warehouse_id:
@@ -2434,11 +2603,12 @@ elif st.session_state.main_panel == 'tableau':
     
     # CONVERSION TAB
     if st.session_state.tableau_active_tab == 'conversion':
-        st.markdown('<h1 style="color: white; text-align: center; margin: 0; padding: 0.5rem 0;">Tableau to Databricks</h1>', unsafe_allow_html=True)
-        st.markdown('<p style="color: rgba(255,255,255,0.9); text-align: center; margin: 0 0 1.5rem 0; font-size: 0.95rem;">Workbook Migration</p>', unsafe_allow_html=True)
+        with st.container(key="my_blue_container"):
+            st.markdown('<h1 style="color: rgb(51, 65, 85); text-align: left; margin: 0; padding: 0.5rem 0;">Tableau to Databricks</h1>', unsafe_allow_html=True)
+            st.markdown('<p style="color: rgb(51, 65, 85); text-align: left; margin: 0 0 1.5rem 0; font-size: 0.95rem;">Workbook Migration</p>', unsafe_allow_html=True)
         
         # New Tab structure for Tableau
-        tab_conv_tab1, tab_conv_tab2, tab_conv_tab3 = st.tabs(["Data Conversion", "Visual Conversion", "Migration Validator"])
+            tab_conv_tab1, tab_conv_tab2, tab_conv_tab3 = st.tabs(["Data Conversion", "Visual Conversion", "Migration Validator"])
 
         # TABLEAU DATA CONVERSION
         with tab_conv_tab1:
@@ -2466,7 +2636,7 @@ elif st.session_state.main_panel == 'tableau':
 
     # CONFIG MANAGER TAB
     elif st.session_state.tableau_active_tab == 'config':
-        st.markdown('<h1 style="color: white;">Tableau Config Manager</h1>', unsafe_allow_html=True)
+        st.markdown('<h1 style="color: rgb(51, 65, 85);">Tableau Config Manager</h1>', unsafe_allow_html=True)
         st.markdown('<p>View and manage configuration tables</p>', unsafe_allow_html=True)
         
         if not warehouse_id:
@@ -2522,7 +2692,7 @@ elif st.session_state.main_panel == 'tableau':
 
     # HISTORY TAB
     elif st.session_state.tableau_active_tab == 'history':
-        st.markdown('<h1 style="color: white;">Tableau Conversion History</h1>', unsafe_allow_html=True)
+        st.markdown('<h1 style="color: rgb(51, 65, 85);">Tableau Conversion History</h1>', unsafe_allow_html=True)
         st.markdown('<p>View past workbook conversions from this session</p>', unsafe_allow_html=True)
         
         tableau_history = [h for h in st.session_state.run_history if h.get('source') == 'tableau']

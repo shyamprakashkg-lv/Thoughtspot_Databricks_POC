@@ -1,0 +1,199 @@
+guid: 9b4a453e-7183-4b16-ba09-61359fe2d7b4
+liveboard:
+  name: ServiceNow_BU
+  description: Gathering the insights of ServiceNow_bu table data
+  visualizations:
+  - id: Viz_1
+    answer:
+      name: Total Value by BU_Impacted
+      tables:
+      - id: dim_servicenow_bu_info
+        name: dim_servicenow_bu_info
+      search_query: "[Value] [BU_Impacted]"
+      answer_columns:
+      - name: BU_Impacted
+      - name: Total Value
+      table:
+        table_columns:
+        - column_id: BU_Impacted
+          show_headline: false
+        - column_id: Total Value
+          show_headline: false
+        ordered_column_ids:
+        - BU_Impacted
+        - Total Value
+        client_state: ""
+        client_state_v2: "{\"tableVizPropVersion\": \"V1\"}"
+      chart:
+        type: COLUMN
+        chart_columns:
+        - column_id: BU_Impacted
+        - column_id: Total Value
+        axis_configs:
+        - x:
+          - BU_Impacted
+          "y":
+          - Total Value
+        client_state: ""
+        client_state_v2: "{\"version\": \"V4DOT2\",\"chartProperties\": {\"gridLines\": {\"xGridlineEnabled\": false,\"yGridlineEnabled\": false},\"responsiveLayoutPreference\": \"AUTO_ON\",\"chartSpecific\": {\"stackedAsPercentFormat\": {\"category\": \"PERCENTAGE\",\"percentageFormatConfig\": {\"decimals\": 2.0,\"removeTrailingZeroes\": false},\"isCategoryEditable\": false},\"customProps\": \"{\\\"tileType\\\":null,\\\"advancedProperties\\\":{\\\"tooltip\\\":{\\\"enabled\\\":false,\\\"backgroundColor\\\":\\\"#2E75F0\\\",\\\"borderColor\\\":\\\"#2E75F0\\\",\\\"borderWidth\\\":\\\"1\\\",\\\"opacity\\\":\\\"90\\\",\\\"label\\\":{},\\\"value\\\":{}},\\\"regression\\\":{\\\"lineWidth\\\":\\\"\\\"},\\\"gridlines\\\":{\\\"xAxis\\\":{},\\\"yAxis\\\":{}},\\\"answerLevelSettings\\\":{\\\"chart\\\":{\\\"backgroundStyle\\\":null},\\\"plotArea\\\":{\\\"backgroundStyle\\\":null},\\\"borderColor\\\":\\\"\\\",\\\"borderWidth\\\":\\\"\\\",\\\"connectingLines\\\":false},\\\"stackLabelStyles\\\":{\\\"align\\\":\\\"center\\\",\\\"backgroundColor\\\":\\\"\\\",\\\"borderColor\\\":\\\"\\\",\\\"borderWidth\\\":\\\"1\\\",\\\"maxCharacters\\\":\\\"\\\",\\\"style\\\":{}}},\\\"showLabel\\\":true,\\\"showComparison\\\":true,\\\"showSparkline\\\":true,\\\"showAnalyseChangeCta\\\":true,\\\"showAnomalies\\\":null,\\\"customCompare\\\":null}\",\"pivotSummariesState\": {}},\"showStackedLabels\": true,\"allLabels\": true,\"kpiDisplayProperties\": {\"showDateLabel\": true,\"showCurrentDateLabel\": true,\"showPreviousDateLabel\": true,\"showPreviousValue\": true,\"showChange\": true,\"showChangeAs\": \"PERCENT\",\"changeInterpretation\": \"UPWARD_IS_GOOD\"}},\"columnProperties\": [{\"columnId\": \"BU_Impacted\",\"columnProperty\": {\"dataLabels\": true,\"customProps\": \"{\\\"advancedProperties\\\":{\\\"dataLabels\\\":{\\\"align\\\":\\\"center\\\",\\\"backgroundColor\\\":\\\"\\\",\\\"borderColor\\\":\\\"\\\",\\\"borderWidth\\\":\\\"1\\\",\\\"filter\\\":null,\\\"maxCharacters\\\":\\\"\\\",\\\"style\\\":{\\\"isLinked\\\":false,\\\"linkedTo\\\":null}},\\\"enableMarkers\\\":null,\\\"lineStyle\\\":null,\\\"markerStyle\\\":null}}\",\"kpiColumnProperties\": {\"showAbbreviatedPreviousDate\": false,\"abbreviatedPreviousDate\": \"\",\"showSparkline\": true,\"showComparisonDate\": true}}},{\"columnId\": \"Total Value\",\"columnProperty\": {\"dataLabels\": true,\"customProps\": \"{\\\"advancedProperties\\\":{\\\"dataLabels\\\":{\\\"align\\\":\\\"center\\\",\\\"backgroundColor\\\":\\\"\\\",\\\"borderColor\\\":\\\"\\\",\\\"borderWidth\\\":\\\"1\\\",\\\"filter\\\":{\\\"value\\\":0,\\\"operator\\\":\\\"Greater than or equal to\\\"},\\\"maxCharacters\\\":\\\"\\\",\\\"style\\\":{\\\"isLinked\\\":false,\\\"linkedTo\\\":null}},\\\"enableMarkers\\\":null,\\\"lineStyle\\\":null,\\\"markerStyle\\\":null}}\",\"kpiColumnProperties\": {\"showAbbreviatedPreviousDate\": false,\"abbreviatedPreviousDate\": \"\",\"showSparkline\": true,\"showComparisonDate\": true}}},{\"columnId\": \"90c1431f-9133-4a0f-bfe8-45b558a80a20\",\"columnProperty\": {\"dataLabels\": true,\"customProps\": \"{\\\"advancedProperties\\\":{\\\"dataLabels\\\":{\\\"align\\\":\\\"center\\\",\\\"backgroundColor\\\":\\\"\\\",\\\"borderColor\\\":\\\"\\\",\\\"borderWidth\\\":\\\"1\\\",\\\"filter\\\":null,\\\"maxCharacters\\\":\\\"\\\",\\\"style\\\":{\\\"isLinked\\\":false,\\\"linkedTo\\\":null}},\\\"enableMarkers\\\":null,\\\"lineStyle\\\":null,\\\"markerStyle\\\":null}}\",\"kpiColumnProperties\": {\"showAbbreviatedPreviousDate\": false,\"abbreviatedPreviousDate\": \"\",\"showSparkline\": true,\"showComparisonDate\": true}}},{\"columnId\": \"11c7c6e4-6dd4-44ef-8171-bbbd1980415b\",\"columnProperty\": {\"dataLabels\": true,\"customProps\": \"{\\\"advancedProperties\\\":{\\\"dataLabels\\\":{\\\"align\\\":\\\"center\\\",\\\"backgroundColor\\\":\\\"\\\",\\\"borderColor\\\":\\\"\\\",\\\"borderWidth\\\":\\\"1\\\",\\\"filter\\\":null,\\\"maxCharacters\\\":\\\"\\\",\\\"style\\\":{\\\"isLinked\\\":false,\\\"linkedTo\\\":null}},\\\"enableMarkers\\\":null,\\\"lineStyle\\\":null,\\\"markerStyle\\\":null}}\",\"kpiColumnProperties\": {\"showAbbreviatedPreviousDate\": false,\"abbreviatedPreviousDate\": \"\",\"showSparkline\": true,\"showComparisonDate\": true}}}],\"axisProperties\": [{\"id\": \"435de75e-55da-43f2-a6da-2cd83b459ea2\",\"properties\": {\"axisType\": \"Y\",\"linkedColumns\": [\"Total Value\"],\"isOpposite\": false,\"customProps\": \"{\\\"advancedProperties\\\":{\\\"axisSettings\\\":{\\\"visible\\\":true,\\\"axisName\\\":{\\\"isLinked\\\":false,\\\"isAxisNameVisible\\\":true}},\\\"labels\\\":{\\\"isLinked\\\":false,\\\"enabled\\\":true,\\\"maxCharacters\\\":\\\"\\\"},\\\"ticks\\\":{\\\"showTicks\\\":false,\\\"tickWidth\\\":\\\"1\\\",\\\"tickLength\\\":\\\"5\\\",\\\"tickColor\\\":\\\"#5E5E5E\\\"}}}\"}},{\"id\": \"8b057246-1e33-4ba6-920a-176dffe480d7\",\"properties\": {\"axisType\": \"X\",\"linkedColumns\": [\"BU_Impacted\"],\"customProps\": \"{\\\"advancedProperties\\\":{\\\"axisSettings\\\":{\\\"visible\\\":true,\\\"axisName\\\":{\\\"isLinked\\\":false,\\\"isAxisNameVisible\\\":true}},\\\"labels\\\":{\\\"isLinked\\\":false,\\\"enabled\\\":true,\\\"maxCharacters\\\":\\\"\\\"},\\\"ticks\\\":{\\\"showTicks\\\":false,\\\"tickWidth\\\":\\\"1\\\",\\\"tickLength\\\":\\\"5\\\",\\\"tickColor\\\":\\\"#5E5E5E\\\"}}}\"}}],\"seriesColors\": [{\"serieName\": \"Total Value\",\"color\": \"#2E75F0\"}],\"systemSeriesColors\": [{\"serieName\": \"Total Value\",\"color\": \"#747E8C\"}]}"
+      display_mode: CHART_MODE
+    viz_guid: 404917b0-f19e-4072-a90c-1147bfed9df5
+  - id: Viz_2
+    answer:
+      name: Average Value by BU_Impacted
+      description: Average Greater than 500
+      tables:
+      - id: dim_servicenow_bu_info
+        name: dim_servicenow_bu_info
+      search_query: "average [Value] [BU_Impacted]"
+      answer_columns:
+      - name: Average Value
+        format:
+          category: NUMBER
+          numberFormatConfig:
+            unit: AUTO
+            decimals: 2.0
+            negativeValueFormat: PREFIX_DASH
+            toSeparateThousands: true
+            removeTrailingZeroes: false
+          isCategoryEditable: true
+      - name: BU_Impacted
+      table:
+        table_columns:
+        - column_id: Average Value
+          show_headline: false
+        - column_id: BU_Impacted
+          show_headline: false
+        ordered_column_ids:
+        - BU_Impacted
+        - Average Value
+        client_state: ""
+        client_state_v2: "{\"tableVizPropVersion\": \"V1\",\"wrapTableHeader\": true,\"columnProperties\": [{\"columnId\": \"BU_Impacted\",\"columnProperty\": {\"conditionalFormatting\": {\"rows\": [{\"operator\": \"IS\",\"value\": \"Finance\",\"backgroundFormatType\": \"SOLID\",\"solidBackgroundAttrs\": {},\"comparisonType\": \"VALUE_BASED\",\"lhsColumnId\": \"BU_Impacted\",\"isHighlightRow\": false}]}}},{\"columnId\": \"Average Value\",\"columnProperty\": {\"conditionalFormatting\": {\"rows\": [{\"operator\": \"LESS_THAN\",\"value\": \"0\",\"backgroundFormatType\": \"SOLID\",\"solidBackgroundAttrs\": {},\"comparisonType\": \"VALUE_BASED\",\"lhsColumnId\": \"Average Value\",\"isHighlightRow\": false}]}}}]}"
+      chart:
+        type: COLUMN
+        chart_columns:
+        - column_id: Average Value
+        - column_id: BU_Impacted
+        axis_configs:
+        - x:
+          - BU_Impacted
+          "y":
+          - Average Value
+        client_state: ""
+        client_state_v2: "{\"version\": \"V4DOT2\",\"chartProperties\": {\"responsiveLayoutPreference\": \"AUTO_ON\",\"chartSpecific\": {\"stackedAsPercentFormat\": {\"category\": \"PERCENTAGE\",\"percentageFormatConfig\": {\"decimals\": 2.0,\"removeTrailingZeroes\": false},\"isCategoryEditable\": false},\"customProps\": \"{\\\"tileType\\\":null,\\\"advancedProperties\\\":{\\\"tooltip\\\":{\\\"enabled\\\":true,\\\"borderWidth\\\":\\\"1\\\",\\\"opacity\\\":\\\"\\\",\\\"label\\\":{},\\\"value\\\":{}},\\\"regression\\\":{\\\"lineWidth\\\":\\\"\\\"},\\\"gridlines\\\":{\\\"xAxis\\\":{},\\\"yAxis\\\":{}},\\\"answerLevelSettings\\\":{\\\"chart\\\":{\\\"backgroundStyle\\\":null},\\\"plotArea\\\":{\\\"backgroundStyle\\\":null},\\\"borderColor\\\":\\\"\\\",\\\"borderWidth\\\":\\\"\\\",\\\"connectingLines\\\":false},\\\"stackLabelStyles\\\":{\\\"align\\\":\\\"center\\\",\\\"backgroundColor\\\":\\\"\\\",\\\"borderColor\\\":\\\"\\\",\\\"borderWidth\\\":\\\"1\\\",\\\"maxCharacters\\\":\\\"\\\",\\\"style\\\":{}}},\\\"showLabel\\\":true,\\\"showComparison\\\":true,\\\"showSparkline\\\":true,\\\"showAnalyseChangeCta\\\":true,\\\"showAnomalies\\\":null,\\\"customCompare\\\":null}\",\"pivotSummariesState\": {}},\"showStackedLabels\": true,\"allLabels\": true,\"kpiDisplayProperties\": {\"showDateLabel\": true,\"showCurrentDateLabel\": true,\"showPreviousDateLabel\": true,\"showPreviousValue\": true,\"showChange\": true,\"showChangeAs\": \"PERCENT\",\"changeInterpretation\": \"UPWARD_IS_GOOD\"}},\"columnProperties\": [{\"columnId\": \"78cdf887-5471-4244-9357-cafca0eeeefc\",\"columnProperty\": {\"dataLabels\": true,\"customProps\": \"{\\\"advancedProperties\\\":{\\\"dataLabels\\\":{\\\"align\\\":\\\"center\\\",\\\"backgroundColor\\\":\\\"\\\",\\\"borderColor\\\":\\\"\\\",\\\"borderWidth\\\":\\\"1\\\",\\\"filter\\\":null,\\\"maxCharacters\\\":\\\"\\\",\\\"style\\\":{\\\"isLinked\\\":false,\\\"linkedTo\\\":null}},\\\"enableMarkers\\\":null,\\\"lineStyle\\\":null,\\\"markerStyle\\\":null}}\",\"kpiColumnProperties\": {\"showAbbreviatedPreviousDate\": false,\"abbreviatedPreviousDate\": \"\",\"showSparkline\": true,\"showComparisonDate\": true}}},{\"columnId\": \"6cff0f2d-d5a6-4d59-b253-9356c7e695e3\",\"columnProperty\": {\"dataLabels\": true,\"customProps\": \"{\\\"advancedProperties\\\":{\\\"dataLabels\\\":{\\\"align\\\":\\\"center\\\",\\\"backgroundColor\\\":\\\"\\\",\\\"borderColor\\\":\\\"\\\",\\\"borderWidth\\\":\\\"1\\\",\\\"filter\\\":null,\\\"maxCharacters\\\":\\\"\\\",\\\"style\\\":{\\\"isLinked\\\":false,\\\"linkedTo\\\":null}},\\\"enableMarkers\\\":null,\\\"lineStyle\\\":null,\\\"markerStyle\\\":null}}\",\"kpiColumnProperties\": {\"showAbbreviatedPreviousDate\": false,\"abbreviatedPreviousDate\": \"\",\"showSparkline\": true,\"showComparisonDate\": true}}},{\"columnId\": \"BU_Impacted\",\"columnProperty\": {\"dataLabels\": true,\"customProps\": \"{\\\"advancedProperties\\\":{\\\"dataLabels\\\":{\\\"align\\\":\\\"center\\\",\\\"backgroundColor\\\":\\\"\\\",\\\"borderColor\\\":\\\"\\\",\\\"borderWidth\\\":\\\"1\\\",\\\"filter\\\":null,\\\"maxCharacters\\\":\\\"\\\",\\\"style\\\":{\\\"isLinked\\\":false,\\\"linkedTo\\\":null}},\\\"enableMarkers\\\":null,\\\"lineStyle\\\":null,\\\"markerStyle\\\":null}}\",\"kpiColumnProperties\": {\"showAbbreviatedPreviousDate\": false,\"abbreviatedPreviousDate\": \"\",\"showSparkline\": true,\"showComparisonDate\": true}}},{\"columnId\": \"Average Value\",\"columnProperty\": {\"dataLabels\": true,\"conditionalFormatting\": {\"rows\": [{\"operator\": \"GREATER_THAN\",\"value\": \"500\",\"plotAsBand\": false,\"backgroundFormatType\": \"SOLID\",\"solidBackgroundAttrs\": {},\"comparisonType\": \"VALUE_BASED\",\"lhsColumnId\": \"Average Value\",\"isHighlightRow\": false}]},\"customProps\": \"{\\\"advancedProperties\\\":{\\\"dataLabels\\\":{\\\"align\\\":\\\"center\\\",\\\"backgroundColor\\\":\\\"\\\",\\\"borderColor\\\":\\\"\\\",\\\"borderWidth\\\":\\\"1\\\",\\\"filter\\\":null,\\\"maxCharacters\\\":\\\"\\\",\\\"style\\\":{\\\"isLinked\\\":false,\\\"linkedTo\\\":null,\\\"boldFontWeight\\\":false,\\\"color\\\":\\\"#5E5E5E\\\",\\\"fontSize\\\":\\\"10\\\",\\\"italicFontStyle\\\":false,\\\"underlineTextDecoration\\\":false}},\\\"enableMarkers\\\":null,\\\"lineStyle\\\":null,\\\"markerStyle\\\":null}}\",\"kpiColumnProperties\": {\"showAbbreviatedPreviousDate\": false,\"abbreviatedPreviousDate\": \"\",\"showSparkline\": true,\"showComparisonDate\": true}}}],\"axisProperties\": [{\"id\": \"e5c1f22e-5897-494b-84c2-73d3af96264a\",\"properties\": {\"axisType\": \"Y\",\"linkedColumns\": [\"Average Value\"],\"isOpposite\": false}},{\"id\": \"aed5601a-52a1-4309-be5b-f79d1e69ac7a\",\"properties\": {\"axisType\": \"X\",\"linkedColumns\": [\"BU_Impacted\"]}}],\"seriesColors\": [{\"serieName\": \"Average Value\",\"color\": \"#F04152\"}],\"systemSeriesColors\": [{\"serieName\": \"commercial\",\"color\": \"#06BF7F\"},{\"serieName\": \"consumer\",\"color\": \"#FCC838\"},{\"serieName\": \"finance\",\"color\": \"#48D1E0\"},{\"serieName\": \"supply chain\",\"color\": \"#2E75F0\"},{\"serieName\": \"Average Value\",\"color\": \"#FCC838\"}]}"
+      display_mode: CHART_MODE
+    viz_guid: dd422fc2-5e07-4149-b25d-7b429b76300e
+  - id: Viz_3
+    answer:
+      name: Total Value
+      tables:
+      - id: dim_servicenow_bu_info
+        name: dim_servicenow_bu_info
+      search_query: "[Value] [BU_Impacted]"
+      answer_columns:
+      - name: BU_Impacted
+      - name: Total Value
+      table:
+        table_columns:
+        - column_id: BU_Impacted
+          show_headline: false
+        - column_id: Total Value
+          show_headline: false
+        ordered_column_ids:
+        - BU_Impacted
+        - Total Value
+        client_state: ""
+        client_state_v2: "{\"tableVizPropVersion\": \"V1\"}"
+      chart:
+        type: KPI
+        chart_columns:
+        - column_id: BU_Impacted
+        - column_id: Total Value
+        axis_configs:
+        - "y":
+          - Total Value
+        client_state: ""
+        client_state_v2: "{\"version\": \"V4DOT2\",\"chartProperties\": {\"responsiveLayoutPreference\": \"AUTO_ON\",\"chartSpecific\": {\"pivotSummariesState\": {}},\"kpiDisplayProperties\": {\"showDateLabel\": true,\"showCurrentDateLabel\": true,\"showPreviousDateLabel\": true,\"showPreviousValue\": true,\"showChange\": true,\"showChangeAs\": \"PERCENT\",\"changeInterpretation\": \"UPWARD_IS_GOOD\"}},\"columnProperties\": [{\"columnId\": \"BU_Impacted\",\"columnProperty\": {\"kpiColumnProperties\": {\"showSparkline\": true,\"showComparisonDate\": true}}},{\"columnId\": \"Total Value\",\"columnProperty\": {\"kpiColumnProperties\": {\"showSparkline\": true,\"showComparisonDate\": true}}},{\"columnId\": \"2a8920fb-0d1c-406c-aedf-0a3a7ad65809\",\"columnProperty\": {\"kpiColumnProperties\": {\"showSparkline\": true,\"showComparisonDate\": true}}},{\"columnId\": \"967531b4-52de-4d93-944b-bdd54cd3ec05\",\"columnProperty\": {\"kpiColumnProperties\": {\"showSparkline\": true,\"showComparisonDate\": true}}}],\"axisProperties\": [{\"id\": \"073f984e-9d3a-4fb0-9af5-65df47ca4274\",\"properties\": {\"axisType\": \"Y\",\"linkedColumns\": [\"Total Value\"],\"isOpposite\": false}},{\"id\": \"fe180bea-7ff8-4b6d-95dd-62f4307c4128\",\"properties\": {\"axisType\": \"X\"}}],\"systemSeriesColors\": [{\"serieName\": \"Total Value\",\"color\": \"#2E75F0\"}]}"
+      display_mode: CHART_MODE
+    viz_guid: 595743d1-9db4-4e30-ae3a-07d3fbe88513
+  - id: Viz_4
+    answer:
+      name: Maximum Value by BU_Impacted
+      tables:
+      - id: dim_servicenow_bu_info
+        name: dim_servicenow_bu_info
+      search_query: "max [Value] [BU_Impacted]"
+      answer_columns:
+      - name: BU_Impacted
+      - name: Maximum Value
+      table:
+        table_columns:
+        - column_id: BU_Impacted
+          headline_aggregation: COUNT_DISTINCT
+        - column_id: Maximum Value
+          headline_aggregation: MAX
+        ordered_column_ids:
+        - BU_Impacted
+        - Maximum Value
+        client_state: ""
+        client_state_v2: "{\"tableVizPropVersion\": \"V1\"}"
+      chart:
+        type: PIE
+        chart_columns:
+        - column_id: BU_Impacted
+        - column_id: Maximum Value
+        axis_configs:
+        - x:
+          - BU_Impacted
+          "y":
+          - Maximum Value
+        client_state: ""
+        client_state_v2: "{\"version\": \"V4DOT2\",\"chartProperties\": {\"responsiveLayoutPreference\": \"AUTO_ON\",\"chartSpecific\": {\"pivotSummariesState\": {}},\"kpiDisplayProperties\": {\"showDateLabel\": true,\"showCurrentDateLabel\": true,\"showPreviousDateLabel\": true,\"showPreviousValue\": true,\"showChange\": true,\"showChangeAs\": \"PERCENT\",\"changeInterpretation\": \"UPWARD_IS_GOOD\"}},\"columnProperties\": [{\"columnId\": \"BU_Impacted\",\"columnProperty\": {\"kpiColumnProperties\": {\"showAbbreviatedPreviousDate\": false,\"abbreviatedPreviousDate\": \"\",\"showSparkline\": true,\"showComparisonDate\": true}}},{\"columnId\": \"4b65f8cb-50ba-472e-92d0-71cc4e7124b1\",\"columnProperty\": {\"kpiColumnProperties\": {\"showAbbreviatedPreviousDate\": false,\"abbreviatedPreviousDate\": \"\",\"showSparkline\": true,\"showComparisonDate\": true}}},{\"columnId\": \"5dc3a7d8-be76-425e-91bb-832fc9737a75\",\"columnProperty\": {\"kpiColumnProperties\": {\"showAbbreviatedPreviousDate\": false,\"abbreviatedPreviousDate\": \"\",\"showSparkline\": true,\"showComparisonDate\": true}}},{\"columnId\": \"Maximum Value\",\"columnProperty\": {\"conditionalFormatting\": {\"rows\": [{\"operator\": \"GREATER_THAN\",\"value\": \"\",\"plotAsBand\": false,\"backgroundFormatType\": \"SOLID\",\"solidBackgroundAttrs\": {},\"comparisonType\": \"COLUMN_BASED\",\"lhsColumnId\": \"Maximum Value\",\"rhsColumnId\": \"Maximum Value\",\"isHighlightRow\": false}]},\"kpiColumnProperties\": {\"showAbbreviatedPreviousDate\": false,\"abbreviatedPreviousDate\": \"\",\"showSparkline\": true,\"showComparisonDate\": true}}}],\"axisProperties\": [{\"id\": \"59a222ec-549f-4ce3-b564-0ca789c1cd24\",\"properties\": {\"axisType\": \"Y\",\"linkedColumns\": [\"Maximum Value\"],\"isOpposite\": false}},{\"id\": \"3b8f9c61-ad8c-4319-a205-416a163b28e1\",\"properties\": {\"axisType\": \"X\",\"linkedColumns\": [\"BU_Impacted\"]}}],\"systemSeriesColors\": [{\"serieName\": \"Maximum Value\",\"color\": \"#747E8C\"},{\"serieName\": \"commercial\",\"color\": \"#06BF7F\"},{\"serieName\": \"consumer\",\"color\": \"#FCC838\"},{\"serieName\": \"finance\",\"color\": \"#48D1E0\"},{\"serieName\": \"supply chain\",\"color\": \"#2E75F0\"}]}"
+      display_mode: CHART_MODE
+    viz_guid: d243faa0-3ae4-41d6-ba8a-9972ae6eaea2
+  layout:
+    tabs:
+    - name: FrontPage
+      description: ""
+      tiles:
+      - visualization_id: Viz_1
+        x: 0
+        "y": 0
+        height: 8
+        width: 6
+      - visualization_id: Viz_3
+        x: 6
+        "y": 0
+        height: 2
+        width: 3
+      - visualization_id: Viz_4
+        x: 6
+        "y": 2
+        height: 8
+        width: 6
+      id: f98b0243-995c-4c10-a4bd-6b8cf783d7cd
+    - name: NextPage
+      description: ""
+      tiles:
+      - visualization_id: Viz_2
+        x: 0
+        "y": 4
+        height: 8
+        width: 6
+      id: 6fb1b7ee-f4e8-4a80-8a98-5e5dd66f26a1
+  style:
+    style_properties:
+    - name: lb_border_type
+      value: CURVED
+    - name: lb_brand_color
+      value: LBC_A
+    - name: hide_group_title
+      value: "false"
+    - name: hide_group_description
+      value: "true"
+    - name: hide_group_tile_description
+      value: "false"
+    - name: hide_tile_description
+      value: "false"
+    - name: kpi_hero_font_size
+      value: M

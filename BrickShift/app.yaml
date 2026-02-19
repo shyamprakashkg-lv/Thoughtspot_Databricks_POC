@@ -12,6 +12,10 @@ env:
     value: "319455235888743"
   - name: PBI_CLIENT_SECRET
     valueFrom: pbisecret
+  - name: TS_CLIENT_USERNAME
+    valueFrom: tsusername
+  - name: TS_CLIENT_PWD
+    valueFrom: tspassword
 
 resources:
   - name: default
