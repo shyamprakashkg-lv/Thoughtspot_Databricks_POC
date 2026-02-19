@@ -1,0 +1,24 @@
+object:
+- name: ServiceNow_BU
+  filename: ServiceNow_BU.liveboard.tml
+  status:
+    status_code: OK
+  type: liveboard
+  id: 9b4a453e-7183-4b16-ba09-61359fe2d7b4
+  dependency:
+  - name: dim_servicenow_bu_info
+    filename: dim_servicenow_bu_info.table.tml
+  - name: DataBricks_TS_POC
+    filename: DataBricks_TS_POC.connection.tml
+- name: dim_servicenow_bu_info
+  filename: dim_servicenow_bu_info.table.tml
+  status:
+    status_code: OK
+  type: table
+  id: 8fec3fe7-ca56-415a-8bf2-03609a46dfe5
+- name: DataBricks_TS_POC
+  filename: DataBricks_TS_POC.connection.tml
+  status:
+    status_code: OK
+  type: connection
+  id: 6daef4d9-0f26-4be4-8c90-2c45f2fe1a19
