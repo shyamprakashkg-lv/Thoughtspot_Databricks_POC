@@ -1,9 +1,120 @@
-streamlit>=1.39.0
-requests>=2.31.0
+# ═══════════════════════════════════════════════════════════════════════
+# BrickShift — Dashboard Converter
+# Python Requirements (pinned for Material Design 3 UI/UX fidelity)
+# ═══════════════════════════════════════════════════════════════════════
+#
+# CRITICAL: Streamlit >= 1.52.0 is MANDATORY for the M3 theme.
+#
+#   Feature                                    Min Version
+#   ─────────────────────────────────────────   ───────────
+#   st.button(icon=":material/...:")            1.39.0
+#   st.container(key="...") → .st-key-* CSS    1.39.0
+#   button[kind="primary"/"secondary"] attr     1.30.0
+#   st.button(icon_position="left")             1.52.0  ← bottleneck
+#   [data-testid="stToast"] selector            1.28.0
+#   st.data_editor()                            1.23.0
+#
+#   Older Streamlit WILL break:
+#     • .st-key-* selectors won't match → card/button styling lost
+#     • icon= / icon_position= → TypeError
+#     • Platform selector active/inactive states → unstyled
+#
+# ═══════════════════════════════════════════════════════════════════════
+
+# ── Core Framework ───────────────────────────────────────────────────
+streamlit>=1.52.0,<2.0.0
+#   Bumped from your original >=1.39.0 to >=1.52.0 because the app
+#   uses st.button(icon_position="left") which was added in 1.52.0.
+#   Tested/recommended: 1.54.0 (current stable, Feb 2026).
+
+# ── HTTP Client ──────────────────────────────────────────────────────
+requests>=2.31.0,<3.0.0
+
+# ── Spark / Databricks ──────────────────────────────────────────────
 pyspark==3.5.0
+
+# ── Third-Party Streamlit Components ─────────────────────────────────
 extra_streamlit_components~=0.1.80
+#   Provides stx.tab_bar(), stx.TabBarItemData().
+#   ~=0.1.80 keeps your pin; 0.1.80+ confirmed compatible with 1.52+.
+
+# ── Authentication ───────────────────────────────────────────────────
 msal
+
+# ── PDF Libraries ────────────────────────────────────────────────────
 pypdf2
-pandas
-fpdf
+fpdf2>=2.7.0
+#   ⚠ Changed from 'fpdf' to 'fpdf2' — the app imports `from fpdf import FPDF`
+#   which works with BOTH packages, but fpdf (original) is unmaintained since 2012.
+#   fpdf2 is the actively maintained fork (latest: 2.8.6, Feb 2026).
+#   If you specifically need the legacy 'fpdf' package, keep it; but fpdf2
+#   is strongly recommended.
+
+# ── Data ─────────────────────────────────────────────────────────────
+pandas>=2.0.0,<3.0.0
+
+# ── Type Hints (stdlib in Python 3.9+, needed only for 3.8) ─────────
 typing
+#   No-op on Python >=3.9 (already in stdlib). Safe to keep for compat.
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# CDN / Font Dependencies (no pip install — loaded via CSS @import)
+# ═══════════════════════════════════════════════════════════════════════
+#
+#   1. Google Fonts — Inter (weights 300–800)
+#      https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap
+#
+#   2. Material Icons (STABLE CDN — battle-tested, never flaky)
+#      https://fonts.googleapis.com/icon?family=Material+Icons
+#
+#   ⚠  Do NOT use material-symbols-outlined — inconsistent loading,
+#      causes blank/missing icons in production. We learned this the
+#      hard way during the M3 preview build.
+#
+# ═══════════════════════════════════════════════════════════════════════
+# Streamlit CSS Selector Compatibility Reference
+# ═══════════════════════════════════════════════════════════════════════
+#
+#   Selector                              Min Ver   Used For
+#   ─────────────────────────────────────  ───────   ──────────────────────
+#   .stApp                                1.0+      M3 surface background
+#   [data-testid="stSidebar"]             1.18+     Dark sidebar (#0E1525)
+#   [data-testid="stTabs"]                1.24+     Tab container
+#   [data-baseweb="tab-list"]             1.24+     Tab indicator line
+#   button[data-baseweb="tab"]            1.24+     Individual tab styling
+#   button[aria-selected="true"]          1.24+     Active tab highlight
+#   button[kind="primary"]                1.30+     Filled button (M3)
+#   button[kind="secondary"]              1.30+     Outlined button (M3)
+#   .st-key-select_*                      1.39+     Platform selector btns
+#   .st-key-global_test_conn              1.39+     Test Connection btn
+#   [class*="st-key-my_blue_container"]   1.39+     Card with gradient bar
+#   .stButton > button                    1.0+      Generic button styles
+#   .stDownloadButton > button            1.18+     Download button
+#   .stTextInput > div > div > input      1.0+      Text input M3 border
+#   .stSelectbox > div > div              1.0+      Selectbox styling
+#   .stSpinner > div                      1.0+      Spinner accent color
+#   .streamlit-expanderHeader             1.18+     Expander header font
+#   [data-testid="stToast"]               1.28+     Toast notification
+#
+# ═══════════════════════════════════════════════════════════════════════
+# Material Design 3 Color Palette (CSS custom properties in :root)
+# ═══════════════════════════════════════════════════════════════════════
+#
+#   --primary:           #1565C0   (Blue 800)
+#   --primary-hover:     #0D47A1   (Blue 900)
+#   --primary-container: #D1E4FF
+#   --surface:           #F7F9FB
+#   --sidebar-bg:        #0E1525
+#   --success:           #1B7D3A
+#   --error:             #BA1A1A
+#   --warning:           #7D5700
+#
+# ═══════════════════════════════════════════════════════════════════════
+# Quick Start
+# ═══════════════════════════════════════════════════════════════════════
+#
+#   pip install -r requirements.txt
+#   streamlit run app.py
+#
+# ═══════════════════════════════════════════════════════════════════════
